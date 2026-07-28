@@ -1,0 +1,19 @@
+[build-system]
+requires = ["setuptools>=68"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "audio-comic-local"
+version = "0.0.2"
+description = "Local Vietnamese TXT-to-audio pipeline"
+requires-python = ">=3.10"
+
+[project.scripts]
+audio-comic = "app:main"
+
+[tool.setuptools]
+py-modules = ["app", "cli"]
+
+[tool.setuptools.packages.find]
+where = ["."]
+include = ["ai*", "audio*", "core*", "models*", "text_processing*", "tts*", "utils*", "video*"]

@@ -1,0 +1,175 @@
+<!doctype html>
+<html lang="vi">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Spaling Audiobook</title>
+  <link rel="stylesheet" href="/style.css">
+</head>
+<body>
+  <main>
+    <header>
+      <h1>Spaling Audiobook <small class="beta-badge">v0.0.2 release</small></h1>
+      <p>Tạo audio, ảnh cảnh, video và phụ đề trên máy.</p>
+      <div id="system" class="status">Đang kiểm tra hệ thống…</div>
+    </header>
+
+    <form id="form">
+      <section>
+        <h2>1. Dữ liệu truyện</h2>
+        <div class="files">
+          <label>Thư mục .md
+            <span class="path-picker">
+              <input id="contextDir" type="text" placeholder="VD: C:\TruyenCuaBan\.md" required>
+              <button id="chooseContextDir" type="button">Chọn thư mục…</button>
+            </span>
+          </label>
+          <label>File chương (.txt)
+            <input id="chapterFile" type="file" accept=".txt,text/plain" required>
+          </label>
+        </div>
+        <div class="grid input-meta">
+          <label>Tên truyện<input id="story" type="text" placeholder="Tên truyện"></label>
+          <label>Chương<input id="chapterNumber" type="number" min="1" value="1"></label>
+          <label>Thư mục xuất
+            <span class="path-picker">
+              <input id="output" type="text">
+              <button id="chooseOutput" type="button">Chọn thư mục…</button>
+            </span>
+          </label>
+        </div>
+      </section>
+
+      <section>
+        <h2>2. Sản phẩm cần xuất</h2>
+        <p class="hint">Chọn sản phẩm chính. Các tuỳ chọn liên quan sẽ hiện ngay bên dưới.</p>
+        <div class="product-choice">
+          <label><input name="productType" type="radio" value="audio"> Chỉ xuất audiobook MP3</label>
+          <label><input name="productType" type="radio" value="video" checked> Xuất video audiobook MP4</label>
+        </div>
+
+        <div id="audioOptions" class="option-panel" hidden>
+          <h3>Tuỳ chọn đi kèm MP3</h3>
+          <label class="check-line"><input id="audioSrt" type="checkbox"> Xuất thêm file phụ đề tiếng Việt (.srt)</label>
+          <label class="check-line"><input id="audioImages" type="checkbox"> Xuất thêm hình ảnh cho audiobook</label>
+          <div id="audioImageOptions" class="nested-options" hidden>
+            <label><input name="audioImageScope" type="radio" value="poster" checked> Chỉ xuất ảnh bìa</label>
+            <label><input name="audioImageScope" type="radio" value="scenes"> Xuất ảnh bìa và toàn bộ ảnh cảnh</label>
+          </div>
+        </div>
+
+        <div id="videoOptions" class="option-panel">
+          <h3>Tuỳ chọn đi kèm video</h3>
+          <label class="check-line"><input id="videoMp3" type="checkbox" checked> Xuất thêm bản MP3 riêng</label>
+          <label class="check-line"><input id="videoSrt" type="checkbox" checked> Giữ thêm file phụ đề tiếng Việt (.srt)</label>
+          <label>Cách đưa phụ đề vào video
+            <select id="videoSubtitleMode">
+              <option value="none">Không đưa phụ đề vào video</option>
+              <option value="soft" selected>Nhúng track phụ đề — người xem có thể bật/tắt</option>
+              <option value="burn">Ghi cứng phụ đề lên hình bằng FFmpeg</option>
+            </select>
+            <small>Ghi cứng dễ xem ở mọi trình phát nhưng không thể tắt phụ đề.</small>
+          </label>
+          <p class="hint">Video luôn cần và giữ lại ảnh bìa cùng các ảnh cảnh dùng để dựng.</p>
+        </div>
+
+        <div class="checks separated">
+          <label><input id="overnight" type="checkbox"> Chế độ Overnight — chất lượng ảnh cao, mật độ tối đa, không giới hạn thời gian xử lý</label>
+          <label><input id="force" type="checkbox"> Cho phép ghi đè kết quả đã tồn tại trong thư mục xuất</label>
+        </div>
+      </section>
+
+      <section id="imageSettings">
+        <h2>3. Cấu hình hình ảnh</h2>
+        <div class="grid">
+          <label>Số cảnh xuất hiện
+            <select id="sceneDensity">
+              <option value="low">Thấp · 6–60 cảnh</option>
+              <option value="medium" selected>Trung bình · 60–200 cảnh</option>
+              <option value="high">Cao · 100–400 cảnh</option>
+              <option value="max">Max · AI tự chia theo cảnh</option>
+            </select>
+          </label>
+          <label>Chất lượng ảnh
+            <select id="modelProfile">
+              <option value="low">Thấp</option>
+              <option value="medium" selected>Trung bình</option>
+              <option value="high">Cao</option>
+              <option value="max">Max</option>
+            </select>
+            <small>Xuất 1080p. Thấp hơn tự upscale, cao hơn tự nén đẹp hơn.</small>
+          </label>
+          <label>Tỷ lệ khung hình
+            <select id="platform"><option value="youtube">16:9 YouTube</option><option value="tiktok">9:16 TikTok</option><option value="both">Cả hai</option></select>
+          </label>
+        </div>
+      </section>
+
+      <section>
+        <h2>4. Giọng đọc</h2>
+        <div class="grid">
+          <label class="check-line"><input id="ai" type="checkbox" checked> AI hỗ trợ tạo dựng kịch bản nói truyền cảm</label>
+        </div>
+        <details open>
+          <summary>Cài đặt giọng đọc</summary>
+          <div class="grid">
+            <label>Bộ máy tạo giọng
+              <select id="ttsProvider"><option value="vieneu">VieNeu</option><option value="sapi5">Windows</option></select>
+            </label>
+            <label>Giọng<select id="voice"></select></label>
+            <label>Biến thiên giọng<input id="temperature" type="number" min="0" max="2" step="0.05" value="0.6"></label>
+            <label>Phạm vi âm (Top K)<input id="topK" type="number" min="1" max="200" value="20"></label>
+            <label>Xác suất (Top P)<input id="topP" type="number" min="0.01" max="1" step="0.01" value="0.88"></label>
+            <label>Âm lặp<input id="repetition" type="number" min="0.5" max="2" step="0.01" value="1.15"></label>
+            <label>Độ cao<input id="pitch" type="number" min="0.5" max="1.5" step="0.001" value="0.936"></label>
+            <label>Tốc độ<input id="tempo" type="number" min="0.5" max="1.5" step="0.001" value="1.019"></label>
+          </div>
+        </details>
+      </section>
+
+      <section>
+        <h2>5. Trọng số AI chọn cảnh</h2>
+        <p class="hint">Có thể nhập số bất kỳ từ 0 trở lên. App tự chuẩn hóa tổng trọng số.</p>
+        <div class="grid weights">
+          <label>Liên quan chương<input data-weight="chapterRelevance" type="number" min="0" step="0.01" value="0.18"></label>
+          <label>Độ ấn tượng hình ảnh<input data-weight="visualImpact" type="number" min="0" step="0.01" value="0.18"></label>
+          <label>Dễ đọc màn hình nhỏ<input data-weight="smallScreenReadability" type="number" min="0" step="0.01" value="0.16"></label>
+          <label>Chủ thể rõ ràng<input data-weight="mainSubjectClarity" type="number" min="0" step="0.01" value="0.14"></label>
+          <label>Cảm xúc<input data-weight="emotionalImpact" type="number" min="0" step="0.01" value="0.10"></label>
+          <label>Gây tò mò<input data-weight="curiosity" type="number" min="0" step="0.01" value="0.10"></label>
+          <label>Phù hợp nền tảng<input data-weight="platformAdaptability" type="number" min="0" step="0.01" value="0.06"></label>
+          <label>Giữ tính liên tục<input data-weight="continuityAccuracy" type="number" min="0" step="0.01" value="0.04"></label>
+          <label>Hạn chế lộ nội dung<input data-weight="spoilerSafety" type="number" min="0" step="0.01" value="0.04"></label>
+        </div>
+        <button id="resetWeights" type="button">Đặt lại trọng số</button>
+      </section>
+
+      <section>
+        <h2>6. Bắt đầu xử lý</h2>
+        <div class="actions">
+          <button id="start" type="submit">Bắt đầu tạo audiobook</button>
+          <button id="resume" type="button" hidden>Tiếp tục tác vụ</button>
+          <button id="cancel" type="button" disabled>Huỷ tác vụ</button>
+        </div>
+        <div class="progress-row"><progress id="progress" max="100" value="0"></progress><strong id="percent">0%</strong></div>
+        <p id="jobTiming" class="hint" style="margin:0;display:none;">⏱ <span id="elapsed">0:00</span> · Còn lại ~<span id="eta">--:--</span></p>
+        <p id="jobStatus">Sẵn sàng.</p>
+        <pre id="logs" aria-live="polite">Chưa có log.</pre>
+        <div id="outputs"></div>
+        <details>
+          <summary>Các phiên đã lưu</summary>
+          <div id="sessionList" class="session-list">Đang tải…</div>
+        </details>
+      </section>
+
+      <section id="sceneEditor" hidden>
+        <h2>7. Biên tập storyboard</h2>
+        <p class="hint">Bản phân tích gốc được giữ nguyên. Mọi chỉnh sửa lưu riêng trong <code>storyboard.overrides.json</code>; render lại chỉ thay ảnh của cảnh đã chọn sau khi ảnh mới hoàn tất.</p>
+        <div id="sceneEditorStatus" class="status"></div>
+        <div id="sceneCards" class="scene-cards"></div>
+      </section>
+    </form>
+  </main>
+  <script src="/app.js"></script>
+</body>
+</html>

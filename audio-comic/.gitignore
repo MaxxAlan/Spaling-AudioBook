@@ -1,0 +1,51 @@
+# Python
+__pycache__/
+*.py[cod]
+*$py.class
+*.so
+*.egg-info/
+dist/
+build/
+*.egg
+
+# Virtual environment
+.venv/
+venv/
+env/
+
+# IDE
+.vscode/
+.idea/
+*.swp
+*.swo
+
+# Project runtime
+projects/
+cache/
+*.wav
+*.mp3
+*.mp4
+*.png
+!config/*.json
+!tests/fixtures/*
+config/custom_voices.json
+assets/voices/
+models/voices/
+
+# Logs
+logs/
+*.log
+artifacts/
+web_uploads/
+
+# OS
+Thumbs.db
+.DS_Store
+desktop.ini
+
+# Models (too large for git)
+models_data/
+*.ckpt
+*.safetensors
+*.onnx
+*.gguf

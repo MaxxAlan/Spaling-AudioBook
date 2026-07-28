@@ -1,0 +1,39 @@
+{
+    "paths":  {
+                  "ffmpeg":  "",
+                  "ffprobe":  "",
+                  "vieneu_model":  "",
+                  "vieneu_checkpoint":  "",
+                  "projects":  "./projects",
+                  "cache":  "./cache",
+                  "fonts":  "./fonts"
+              },
+    "tts":  {
+                "provider":  "vieneu",
+                "device":  "cpu",
+                "dtype":  "auto",
+                "sample_rate":  44100,
+                "default_speed":  0.97,
+                "default_pitch":  0.0,
+                "batch_size":  1,
+                "seed":  42,
+                "voice":  "Thanh BÃ¬nh",
+                "style":  "doc_truyen",
+                "temperature":  0.4,
+                "top_k":  20,
+                "top_p":  0.92,
+                "repetition_penalty":  1.12,
+                "model_max_chars":  280,
+                "pitch_ratio":  0.94,
+                "tempo_ratio":  1.01,
+                "max_segment_length":  300,
+                "pause_between_sentences_ms":  400,
+                "pause_scene_break_ms":  1800,
+                "pause_chapter_title_ms":  2500,
+                "crossfade_ms":  50,
+                "semantic_qa":  true,
+                "semantic_qa_model":  "small",
+                "semantic_qa_device":  "cpu",
+                "semantic_qa_compute_type":  "int8"
+            }
+}

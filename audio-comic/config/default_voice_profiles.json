@@ -1,0 +1,206 @@
+{
+  "voice_categories": {
+    "narrator_male": {
+      "display_name": "Giọng dẫn truyện nam",
+      "voices": [
+        {
+          "voice_id": "narrator_male_01",
+          "name": "Nam dẫn truyện 01",
+          "gender": "male",
+          "age_group": "adult",
+          "default_speed": 0.95,
+          "default_pitch": 0.0,
+          "default_volume": 1.0,
+          "default_emotion": "neutral",
+          "pause_after_ms": 500
+        }
+      ]
+    },
+    "narrator_female": {
+      "display_name": "Giọng dẫn truyện nữ",
+      "voices": [
+        {
+          "voice_id": "narrator_female_01",
+          "name": "Nữ dẫn truyện 01",
+          "gender": "female",
+          "age_group": "adult",
+          "default_speed": 0.95,
+          "default_pitch": 0.0,
+          "default_volume": 1.0,
+          "default_emotion": "neutral",
+          "pause_after_ms": 500
+        }
+      ]
+    },
+    "male_young": {
+      "display_name": "Giọng nhân vật nam trẻ",
+      "voices": [
+        {
+          "voice_id": "male_young_01",
+          "name": "Nam trẻ 01",
+          "gender": "male",
+          "age_group": "young",
+          "default_speed": 1.05,
+          "default_pitch": 0.1,
+          "default_volume": 1.0,
+          "default_emotion": "neutral",
+          "pause_after_ms": 400
+        },
+        {
+          "voice_id": "male_young_02",
+          "name": "Nam trẻ 02",
+          "gender": "male",
+          "age_group": "young",
+          "default_speed": 1.0,
+          "default_pitch": 0.05,
+          "default_volume": 1.0,
+          "default_emotion": "neutral",
+          "pause_after_ms": 400
+        }
+      ]
+    },
+    "male_middle": {
+      "display_name": "Giọng nhân vật nam trung niên",
+      "voices": [
+        {
+          "voice_id": "male_middle_01",
+          "name": "Nam trung niên 01",
+          "gender": "male",
+          "age_group": "middle",
+          "default_speed": 0.95,
+          "default_pitch": -0.05,
+          "default_volume": 1.0,
+          "default_emotion": "neutral",
+          "pause_after_ms": 450
+        }
+      ]
+    },
+    "male_old": {
+      "display_name": "Giọng nhân vật nam lớn tuổi",
+      "voices": [
+        {
+          "voice_id": "male_old_01",
+          "name": "Nam lớn tuổi 01",
+          "gender": "male",
+          "age_group": "old",
+          "default_speed": 0.85,
+          "default_pitch": -0.15,
+          "default_volume": 0.95,
+          "default_emotion": "neutral",
+          "pause_after_ms": 550
+        }
+      ]
+    },
+    "female_young": {
+      "display_name": "Giọng nhân vật nữ trẻ",
+      "voices": [
+        {
+          "voice_id": "female_young_01",
+          "name": "Nữ trẻ 01",
+          "gender": "female",
+          "age_group": "young",
+          "default_speed": 1.05,
+          "default_pitch": 0.15,
+          "default_volume": 1.0,
+          "default_emotion": "neutral",
+          "pause_after_ms": 400
+        },
+        {
+          "voice_id": "female_young_02",
+          "name": "Nữ trẻ 02",
+          "gender": "female",
+          "age_group": "young",
+          "default_speed": 1.0,
+          "default_pitch": 0.1,
+          "default_volume": 1.0,
+          "default_emotion": "neutral",
+          "pause_after_ms": 400
+        }
+      ]
+    },
+    "female_middle": {
+      "display_name": "Giọng nhân vật nữ trung niên",
+      "voices": [
+        {
+          "voice_id": "female_middle_01",
+          "name": "Nữ trung niên 01",
+          "gender": "female",
+          "age_group": "middle",
+          "default_speed": 0.95,
+          "default_pitch": 0.0,
+          "default_volume": 1.0,
+          "default_emotion": "neutral",
+          "pause_after_ms": 450
+        }
+      ]
+    },
+    "female_old": {
+      "display_name": "Giọng nhân vật nữ lớn tuổi",
+      "voices": [
+        {
+          "voice_id": "female_old_01",
+          "name": "Nữ lớn tuổi 01",
+          "gender": "female",
+          "age_group": "old",
+          "default_speed": 0.85,
+          "default_pitch": -0.1,
+          "default_volume": 0.95,
+          "default_emotion": "neutral",
+          "pause_after_ms": 550
+        }
+      ]
+    },
+    "child": {
+      "display_name": "Giọng trẻ em",
+      "voices": [
+        {
+          "voice_id": "child_01",
+          "name": "Trẻ em 01",
+          "gender": "neutral",
+          "age_group": "child",
+          "default_speed": 1.1,
+          "default_pitch": 0.3,
+          "default_volume": 1.0,
+          "default_emotion": "neutral",
+          "pause_after_ms": 350
+        }
+      ]
+    },
+    "villain": {
+      "display_name": "Giọng phản diện",
+      "voices": [
+        {
+          "voice_id": "villain_01",
+          "name": "Phản diện 01",
+          "gender": "male",
+          "age_group": "adult",
+          "default_speed": 0.9,
+          "default_pitch": -0.2,
+          "default_volume": 1.05,
+          "default_emotion": "menacing",
+          "pause_after_ms": 600
+        }
+      ]
+    },
+    "mysterious": {
+      "display_name": "Giọng bí ẩn",
+      "voices": [
+        {
+          "voice_id": "mysterious_01",
+          "name": "Bí ẩn 01",
+          "gender": "neutral",
+          "age_group": "adult",
+          "default_speed": 0.88,
+          "default_pitch": -0.1,
+          "default_volume": 0.9,
+          "default_emotion": "mysterious",
+          "pause_after_ms": 700
+        }
+      ]
+    },
+    "custom": {
+      "display_name": "Giọng tùy chỉnh",
+      "voices": []
+    }
+  }
+}

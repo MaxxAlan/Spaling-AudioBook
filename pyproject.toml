@@ -1,0 +1,19 @@
+[build-system]
+requires = ["setuptools>=68"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "spaling-audiobook"
+version = "0.0.2"
+description = "Vietnamese multi-image audiobook CLI"
+requires-python = ">=3.10"
+
+[project.scripts]
+audiobook = "audiobook:main"
+
+[tool.setuptools]
+py-modules = ["audiobook", "web_app"]
+
+[tool.setuptools.packages.find]
+where = ["."]
+include = ["overnight*"]

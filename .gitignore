@@ -1,0 +1,75 @@
+# ===================================================
+#   Spaling Audiobook v0.0.1 - .gitignore
+# ===================================================
+
+# --- Environment & Secret Keys ---
+.env
+.env.*
+!.env.example
+
+# --- Python & Node Dependencies ---
+node_modules/
+dist/
+__pycache__/
+*.py[cod]
+.venv/
+venv/
+.pytest_cache/
+.ruff_cache/
+.story-thumbnail/
+
+# --- Outputs & Caches ---
+output/
+artifacts/
+.audiobook-work/
+.audiobook-web/
+cache/
+projects/
+temp/
+tmp/
+*.log
+logs/
+
+# --- Private development material ---
+*.md
+!README.md
+*.example.yaml
+tests/
+**/tests/
+testing/
+tools/ci_smoke.py
+examples/
+**/examples/
+.audiobook-web/
+.install-manifest.json
+ComfyUI/
+release/
+UPDATE_*_REPORT.md
+*_ANALYSIS_REPORT.md
+
+# Voice-cloning assets are biometric/private user data
+audio-comic/config/custom_voices.json
+audio-comic/assets/voices/
+audio-comic/models/voices/
+
+# Keep local model directory without publishing checkpoints/docs
+models/
+
+# --- Media files ---
+*.wav
+!audio-comic/assets/voices/**/reference.wav
+*.mp3
+*.mp4
+*.part
+
+# --- OS/IDE ---
+.DS_Store
+Thumbs.db
+desktop.ini
+.vscode/
+.idea/
+
+# --- Local Models (Ollama manages these) ---
+models/*.gguf
+models/*.bin
+models/*.safetensors

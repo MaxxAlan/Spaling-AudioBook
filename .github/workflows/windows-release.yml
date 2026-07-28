@@ -1,0 +1,58 @@
+name: Windows release
+
+on:
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  verify:
+    runs-on: windows-2022
+    timeout-minutes: 45
+    env:
+      WINDOWS_CERTIFICATE_BASE64: ${{ secrets.WINDOWS_CERTIFICATE_BASE64 }}
+      WINDOWS_CERTIFICATE_PASSWORD: ${{ secrets.WINDOWS_CERTIFICATE_PASSWORD }}
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.11"
+          cache: pip
+      - uses: actions/setup-node@v4
+        with:
+          node-version: "20"
+      - run: corepack enable
+      - run: python -m pip install --upgrade pip
+      - run: python -m pip install -r requirements.txt
+      - run: pnpm --dir poster-generator install --frozen-lockfile
+      - run: pnpm --dir poster-generator typecheck
+      - run: pnpm --dir poster-generator build
+      - run: python -m py_compile audiobook.py web_app.py optimize_context.py
+      - name: Import optional Authenticode certificate
+        if: ${{ env.WINDOWS_CERTIFICATE_BASE64 != '' }}
+        shell: pwsh
+        run: |
+          $bytes = [Convert]::FromBase64String($env:WINDOWS_CERTIFICATE_BASE64)
+          $pfx = Join-Path $env:RUNNER_TEMP "spaling-signing.pfx"
+          [IO.File]::WriteAllBytes($pfx, $bytes)
+          $password = ConvertTo-SecureString $env:WINDOWS_CERTIFICATE_PASSWORD -AsPlainText -Force
+          $certificate = Import-PfxCertificate -FilePath $pfx -CertStoreLocation Cert:\CurrentUser\My -Password $password
+          "SPALING_SIGN_THUMBPRINT=$($certificate.Thumbprint)" >> $env:GITHUB_ENV
+      - name: Build audited package
+        shell: pwsh
+        run: |
+          choco install innosetup --no-progress -y
+          $version = "${{ github.ref_name }}".TrimStart("v")
+          ./tools/package_release.ps1 -Version $version
+      - name: Remove signing certificate
+        if: ${{ always() && env.SPALING_SIGN_THUMBPRINT != '' }}
+        shell: pwsh
+        run: Remove-Item "Cert:\CurrentUser\My\$env:SPALING_SIGN_THUMBPRINT" -Force
+      - uses: actions/upload-artifact@v4
+        with:
+          name: spaling-audiobook-windows
+          path: |
+            release/*.exe
+            release/*.zip
+            release/SHA256SUMS.txt

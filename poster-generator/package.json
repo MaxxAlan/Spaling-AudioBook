@@ -1,0 +1,41 @@
+{
+  "name": "story-thumbnail",
+  "version": "0.0.2",
+  "description": "Local AI CLI for cinematic story episode thumbnail artwork",
+  "type": "module",
+  "bin": {
+    "story-thumbnail": "dist/cli.js",
+    "poster-gen": "dist/poster-gen.js",
+    "storyboard-gen": "dist/storyboard-gen.js",
+    "scene-rerender": "dist/scene-rerender.js"
+  },
+  "engines": {
+    "node": ">=20"
+  },
+  "scripts": {
+    "prebuild": "node -e \"require('fs').rmSync('dist',{recursive:true,force:true})\"",
+    "build": "tsc -p tsconfig.build.json",
+    "typecheck": "tsc -p tsconfig.json --noEmit",
+    "lint": "eslint src tests",
+    "test": "vitest run",
+    "dev": "tsx src/cli.ts",
+    "storyboard": "node dist/storyboard-gen.js"
+  },
+  "dependencies": {
+    "commander": "^14.0.0",
+    "dotenv": "^17.2.0",
+    "pino": "^9.7.0",
+    "sharp": "^0.35.3",
+    "zod": "^4.0.0"
+  },
+  "devDependencies": {
+    "@eslint/js": "^9.31.0",
+    "@types/node": "^24.0.0",
+    "eslint": "^9.31.0",
+    "tsx": "^4.20.0",
+    "typescript": "^5.8.0",
+    "typescript-eslint": "^8.38.0",
+    "vitest": "^3.2.0"
+  },
+  "packageManager": "pnpm@11.9.0"
+}

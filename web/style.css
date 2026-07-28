@@ -1,0 +1,58 @@
+:root { font-family: Arial, sans-serif; color: #111; background: #fff; }
+* { box-sizing: border-box; }
+body { margin: 0; }
+[hidden] { display: none !important; }
+main { width: min(1080px, 96%); margin: 20px auto 60px; }
+header { border-bottom: 2px solid #222; padding-bottom: 12px; }
+h1 { margin: 0 0 6px; font-size: 1.7rem; }
+.beta-badge { display: inline-block; padding: 3px 7px; border: 1px solid #777; border-radius: 999px; font-size: .72rem; vertical-align: middle; }
+h2 { margin: 0 0 12px; font-size: 1.05rem; }
+h3 { margin: 0 0 10px; font-size: .96rem; }
+p { margin: 6px 0; }
+section { border: 1px solid #aaa; margin: 14px 0; padding: 16px; }
+.status, .hint { color: #444; font-size: .9rem; }
+.files, .grid { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 12px; }
+.files { grid-template-columns: repeat(3, minmax(0, 1fr)); }
+.grid.three { grid-template-columns: 1.2fr 1fr 1.5fr; margin-top: 12px; }
+.input-meta { grid-template-columns: 1.4fr 100px 2.5fr; margin-top: 12px; }
+.weights { grid-template-columns: repeat(3, minmax(0, 1fr)); margin: 12px 0; }
+label { display: flex; flex-direction: column; gap: 5px; font-size: .9rem; }
+small { color: #555; line-height: 1.35; }
+input, select, button { width: 100%; min-height: 38px; border: 1px solid #777; background: #fff; color: #111; padding: 8px; font: inherit; }
+button { width: auto; cursor: pointer; }
+button:hover { border-color: #000; }
+button:disabled { opacity: .5; cursor: default; }
+.checks { display: flex; flex-wrap: wrap; gap: 12px 20px; margin-top: 14px; }
+.checks label, .check-line, .product-choice label, .nested-options label { flex-direction: row; align-items: center; }
+.checks input, .check-line input, .product-choice input, .nested-options input { width: auto; min-height: auto; }
+.separated { border-top: 1px solid #ccc; padding-top: 14px; }
+.product-choice { display: grid; grid-template-columns: 1fr 1fr; gap: 10px; }
+.product-choice label { border: 1px solid #999; padding: 12px; cursor: pointer; }
+.option-panel { margin-top: 12px; border: 1px solid #bbb; padding: 14px; display: grid; gap: 10px; }
+.nested-options { margin: 0 0 0 24px; display: grid; gap: 8px; border-left: 2px solid #bbb; padding-left: 12px; }
+.path-picker, .worker-row { display: grid; grid-template-columns: minmax(0, 1fr) auto; gap: 8px; }
+.path-picker button, .worker-row button { white-space: nowrap; }
+details { border-top: 1px solid #ccc; margin-top: 14px; padding-top: 10px; }
+summary { cursor: pointer; margin-bottom: 12px; }
+.actions, .progress-row { display: flex; align-items: center; gap: 10px; }
+.progress-row { margin-top: 14px; }
+progress { width: 100%; height: 22px; }
+#percent { min-width: 52px; text-align: right; }
+pre { min-height: 160px; max-height: 360px; overflow: auto; white-space: pre-wrap; border: 1px solid #bbb; background: #fafafa; padding: 10px; font: 12px/1.45 Consolas, monospace; }
+#outputs { display: flex; flex-wrap: wrap; gap: 8px; }
+#outputs a { color: #111; border: 1px solid #777; padding: 7px 10px; text-decoration: none; }
+.scene-cards { display: grid; gap: 14px; }
+.scene-card { display: grid; grid-template-columns: minmax(220px, .8fr) minmax(0, 1.6fr); gap: 14px; border: 1px solid #999; padding: 12px; }
+.scene-card img { width: 100%; aspect-ratio: 16/9; object-fit: cover; background: #eee; }
+.scene-card textarea { width: 100%; min-height: 84px; resize: vertical; padding: 8px; font: inherit; }
+.scene-card .prompt-editor { min-height: 150px; font: 12px/1.4 Consolas, monospace; }
+.scene-card .scene-toolbar { display: flex; flex-wrap: wrap; gap: 8px; align-items: center; margin-top: 8px; }
+.scene-card .scene-toolbar label { flex-direction: row; align-items: center; }
+.scene-card .scene-toolbar input[type=checkbox] { width: auto; min-height: auto; }
+.scene-evidence { font-size: .82rem; color: #444; border-left: 3px solid #999; padding-left: 8px; }
+@media (max-width: 760px) {
+  .files, .grid, .grid.three, .input-meta, .weights, .product-choice { grid-template-columns: 1fr; }
+  .checks, .actions { flex-direction: column; align-items: stretch; }
+  button { width: 100%; }
+  .scene-card { grid-template-columns: 1fr; }
+}
