@@ -91,7 +91,7 @@ export async function reviewStoryboardImage(
 ): Promise<VisionReview> {
   const model = options.model || process.env.VISION_QA_MODEL || 'moondream';
   const judgeModel = process.env.VISION_QA_JUDGE_MODEL || 'qwen2.5:1.5b';
-  const baseUrl = (options.baseUrl || process.env.OLLAMA_BASE_URL || 'http://127.0.0.1:11434').replace(/\/$/, '');
+  const baseUrl = (options.baseUrl || process.env.OLLAMA_BASE_URL || 'http://127.0.0.1:11435').replace(/\/$/, '');
   const fetcher = options.fetcher ?? fetch;
   const visibleFacts = (brief.requiredVisuals ?? [brief.coreVisualIdea]).join('; ');
   const expectation = [brief.coreVisualIdea, visibleFacts, ...brief.magicEffects].join(' ');

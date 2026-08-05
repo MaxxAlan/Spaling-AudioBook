@@ -34,13 +34,13 @@ class OllamaNarrationHelper:
         self,
         model: str = "",
         story_model: str = "",
-        base_url: str = "http://127.0.0.1:11434",
+        base_url: str | None = None,
         timeout: int | None = 3600,
         batch_size: int = 12,
         retries: int = 1,
         parameter_policy: ParameterPolicy | None = None,
     ) -> None:
-        self.base_url = base_url.rstrip("/")
+        self.base_url = (base_url or os.environ.get("OLLAMA_BASE_URL", "http://127.0.0.1:11435")).rstrip("/")
         self.timeout = timeout
         self.batch_size = max(1, batch_size)
         self.retries = max(1, retries)

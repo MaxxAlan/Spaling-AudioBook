@@ -27,20 +27,22 @@ if ($confirm -ne "YES") {
 }
 
 Write-Host ""
-Write-Host "[1/4] Dang dung ComfyUI server..." -ForegroundColor Cyan
+Write-Host "[1/4] Dang dung cac server local..." -ForegroundColor Cyan
 Get-Process -Name "python" -ErrorAction SilentlyContinue | Where-Object {
     $_.CommandLine -like "*ComfyUI*"
 } | Stop-Process -Force -ErrorAction SilentlyContinue
+Get-Process -Name "ollama" -ErrorAction SilentlyContinue | Stop-Process -Force -ErrorAction SilentlyContinue
+Start-Sleep -Milliseconds 500
 
-Write-Host "[2/4] Dang xoa Ollama models..." -ForegroundColor Cyan
-$ollamaModels = Join-Path $env:USERPROFILE ".ollama\models"
-if (Test-Path $ollamaModels) {
-    $size = (Get-ChildItem -Recurse $ollamaModels | Measure-Object -Property Length -Sum).Sum / 1GB
-    Write-Host "  Tim thay Ollama models: $([math]::Round($size, 1)) GB" -ForegroundColor Yellow
-    $removeOllama = Read-Host "  Xoa Ollama models? (y/n)"
-    if ($removeOllama -eq "y") {
-        Remove-Item -Recurse -Force $ollamaModels
-        Write-Host "  Da xoa: Ollama models" -ForegroundColor Gray
+Write-Host "[2/4] Dang xoa model va cache trong o app..." -ForegroundColor Cyan
+$localData = Join-Path $Root ".data"
+if (Test-Path $localData) {
+    $size = (Get-ChildItem -Recurse $localData | Measure-Object -Property Length -Sum).Sum / 1GB
+    Write-Host "  Tim thay model/cache (.data): $([math]::Round($size, 1)) GB" -ForegroundColor Yellow
+    $removeData = Read-Host "  Xoa model va cache? (y/n)"
+    if ($removeData -eq "y") {
+        Remove-Item -Recurse -Force $localData
+        Write-Host "  Da xoa: $localData" -ForegroundColor Gray
     }
 }
 

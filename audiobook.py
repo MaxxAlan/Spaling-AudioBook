@@ -18,10 +18,14 @@ from typing import Sequence
 
 from overnight.presets import AUDIOBOOK_PROFILE_RANGES, choose_image_count, estimate_scene_hints
 
+from backend_bootstrap import configure_local_paths
+
 ROOT = Path(__file__).resolve().parent
 AUDIO_TOOL = ROOT / "audio-comic"
 POSTER_TOOL = ROOT / "poster-generator"
 TESTING = ROOT / "testing"
+
+configure_local_paths(ROOT)
 
 
 def _pnpm_command() -> list[str] | None:

@@ -3,7 +3,7 @@ import { z } from 'zod';
 
 const envSchema = z.object({
   TEXT_AI_PROVIDER: z.enum(['ollama', 'mock']).default('ollama'),
-  TEXT_AI_MODEL: z.string().default('qwen2.5:7b'), OLLAMA_BASE_URL: z.string().default('http://127.0.0.1:11434'),
+  TEXT_AI_MODEL: z.string().default('qwen2.5:7b'), OLLAMA_BASE_URL: z.string().default('http://127.0.0.1:11435'),
   ANALYSIS_PROFILE: z.enum(['fast', 'balanced', 'quality', 'all-7b']).default('balanced'),
   DIRECTOR_MODEL: z.string().default('qwen2.5:7b'), WORKER_MODEL: z.string().default('qwen2.5:1.5b'),
   DIRECTOR_TIMEOUT_MS: z.coerce.number().int().positive().default(600000),

@@ -1,7 +1,7 @@
 @echo off
 set "ROOT=%~dp0"
-set "PYTHON_EXE=%ROOT%.venv\Scripts\python.exe"
-set "PYTHONW_EXE=%ROOT%.venv\Scripts\pythonw.exe"
+set "PYTHON_EXE=%ROOT%.runtime\python\python.exe"
+set "PYTHONW_EXE=%ROOT%.runtime\python\pythonw.exe"
 if not exist "%PYTHON_EXE%" set "PYTHON_EXE=python"
 if not exist "%PYTHONW_EXE%" set "PYTHONW_EXE=pythonw"
 if /I "%~1"=="web" (

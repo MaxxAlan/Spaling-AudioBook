@@ -18,6 +18,84 @@ from urllib.parse import urlparse
 ROOT = Path(__file__).resolve().parent
 
 
+def configure_local_paths(root: Path | None = None) -> Path:
+    """Keep models and caches on the app drive instead of the C: user profile.
+
+    Forces process-wide env vars so Ollama models, HuggingFace downloads and
+    pip caches land inside ``<root>/.data`` no matter where the user has
+    pointed HF_HOME/PIP_CACHE_DIR globally (e.g. another project on drive D).
+    Also prepends the portable runtimes from ``<root>/.runtime`` to PATH so
+    the app uses its own Python/Node/FFmpeg/Git/Ollama instead of any system
+    installs. Values are relative to the app root, so they follow the app if
+    the folder is moved. Only affects this process and its children.
+    """
+    app_root = (root or ROOT).resolve()
+    data_dir = app_root / ".data"
+    runtime_dir = app_root / ".runtime"
+    os.environ["OLLAMA_MODELS"] = str(data_dir / "ollama" / "models")
+    os.environ["HF_HOME"] = str(data_dir / "huggingface")
+    os.environ["HF_HUB_CACHE"] = str(data_dir / "huggingface" / "hub")
+    os.environ["PIP_CACHE_DIR"] = str(data_dir / "pip")
+    os.environ["PNPM_CONFIG_STORE_DIR"] = str(data_dir / "pnpm-store")
+    os.environ["NPM_CONFIG_CACHE"] = str(data_dir / "npm-cache")
+    # Run the bundled Ollama on its own port so it never collides with an
+    # Ollama the user already installed (default port 11434 auto-starts on login).
+    os.environ["OLLAMA_HOST"] = "127.0.0.1:11435"
+    os.environ["OLLAMA_BASE_URL"] = "http://127.0.0.1:11435"
+    runtime_paths = [
+        str(runtime_dir / "python"),
+        str(runtime_dir / "python" / "Scripts"),
+        str(runtime_dir / "node"),
+        str(runtime_dir / "ffmpeg" / "bin"),
+        str(runtime_dir / "git" / "cmd"),
+        str(runtime_dir / "ollama"),
+        str(runtime_dir / "pnpm"),
+    ]
+    os.environ["PATH"] = os.pathsep.join(runtime_paths + [os.environ.get("PATH", "")])
+    _normalize_poster_env(app_root)
+    return data_dir
+
+
+def _normalize_poster_env(app_root: Path) -> None:
+    """Rebind absolute paths in ``poster-generator/.env`` to the current app root.
+
+    install.bat writes COMFYUI_PATH/COMFYUI_WORKFLOW/COMFYUI_PYTHON with the
+    drive letter present at install time. If the app is moved to another drive
+    (e.g. the USB is mounted as F: on another PC), those stale E:\\ paths would
+    break the poster generator. Rewrite them so they follow the app. Values
+    that already point at the current root are left untouched, so user tweaks
+    to other keys survive.
+    """
+    env_path = app_root / "poster-generator" / ".env"
+    if not env_path.is_file():
+        return
+    replacements = {
+        "COMFYUI_PATH": str(app_root / "ComfyUI"),
+        "COMFYUI_WORKFLOW": str(app_root / "poster-generator" / "workflows" / "sd15_basic.json"),
+        "COMFYUI_PYTHON": str(app_root / ".runtime" / "python" / "python.exe"),
+    }
+    lines = env_path.read_text(encoding="utf-8-sig").splitlines()
+    changed = False
+    for i, line in enumerate(lines):
+        key, sep, value = line.partition("=")
+        if not sep or not key.strip() or key.strip() not in replacements:
+            continue
+        try:
+            current = str(Path(value.strip().strip('"')).resolve())
+        except OSError:
+            current = ""
+        target = replacements[key.strip()]
+        if current and current == str(Path(target).resolve()):
+            continue
+        lines[i] = f"{key.strip()}={target}"
+        changed = True
+    if changed:
+        env_path.write_text("\n".join(lines) + "\n", encoding="utf-8")
+
+
+configure_local_paths()
+
+
 @dataclass
 class BackendStatus:
     name: str

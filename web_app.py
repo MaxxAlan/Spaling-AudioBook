@@ -20,15 +20,19 @@ from pathlib import Path
 from urllib import error, request
 from urllib.parse import unquote, urlparse
 
+from backend_bootstrap import configure_local_paths
+
 
 ROOT = Path(__file__).resolve().parent
 STATIC_DIR = ROOT / "web"
 JOB_ROOT = ROOT / ".audiobook-web"
 
-def _venv_python() -> str:
-    venv_py = ROOT / ".venv" / "Scripts" / "python.exe"
-    if venv_py.is_file():
-        return str(venv_py)
+configure_local_paths(ROOT)
+
+def _runtime_python() -> str:
+    runtime_py = ROOT / ".runtime" / "python" / "python.exe"
+    if runtime_py.is_file():
+        return str(runtime_py)
     return sys.executable
 JOBS: dict[str, dict] = {}
 JOBS_LOCK = threading.Lock()
@@ -43,9 +47,13 @@ def set_backend_status(statuses: list[dict[str, object]]) -> None:
     BACKEND_STATUS = list(statuses)
 
 
+def _ollama_base_url() -> str:
+    return os.environ.get("OLLAMA_BASE_URL", "http://127.0.0.1:11435")
+
+
 def _ollama_models() -> list[str]:
     try:
-        with request.urlopen("http://127.0.0.1:11434/api/tags", timeout=2) as response:
+        with request.urlopen(f"{_ollama_base_url()}/api/tags", timeout=2) as response:
             payload = json.loads(response.read().decode("utf-8"))
     except (OSError, error.URLError, json.JSONDecodeError):
         return []
@@ -164,7 +172,7 @@ def _recommend_parallel_workers(payload: dict) -> dict[str, object]:
             "options": {"temperature": 0},
         }).encode("utf-8")
         req = request.Request(
-            "http://127.0.0.1:11434/api/generate", data=body,
+            f"{_ollama_base_url()}/api/generate", data=body,
             headers={"Content-Type": "application/json"}, method="POST",
         )
         with request.urlopen(req, timeout=120) as response:
@@ -608,7 +616,7 @@ def _build_command(job_id: str, payload: dict) -> tuple[list[str], Path]:
         payload["parallel_recommendation"] = recommendation
 
     command = [
-        _venv_python(), "-u", str(ROOT / "audiobook.py"), "build",
+        _runtime_python(), "-u", str(ROOT / "audiobook.py"), "build",
         "--input", str(master), str(rules), str(chapter),
         "--output", str(output),
         "--story", str(payload.get("story", "") or "audiobook"),

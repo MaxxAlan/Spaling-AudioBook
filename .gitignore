@@ -43,6 +43,8 @@ examples/
 .audiobook-web/
 .install-manifest.json
 ComfyUI/
+.data/
+.runtime/
 release/
 UPDATE_*_REPORT.md
 *_ANALYSIS_REPORT.md

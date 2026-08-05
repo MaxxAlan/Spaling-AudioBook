@@ -26,6 +26,32 @@ cd Spaling-AudioBook
 install.bat
 ```
 
+Installer mac dinh chay qua `install.py` de de mo rong theo tung thiet bi:
+
+```cmd
+python install.py --profile core   :: dependency toi thieu
+python install.py --profile audio  :: them TTS/ASR QA
+python install.py --profile full   :: day du local AI, ComfyUI, Ollama, model
+```
+
+Tren Windows moi chua co Python, cu chay `install.bat`; file nay tu tai Python portable roi chuyen sang `install.py`.
+
+## Chạy di động (USB)
+
+Toàn bộ runtime (Python, Node, FFmpeg, Git, Ollama), dependency và model nằm ngay trong thư mục ứng dụng (`.runtime`, `.data`) — không ghi ra ổ C, không cần quyền Admin.
+
+- **Clone vào thư mục nào thì dùng thư mục đó.** Có thể đổi vị trí thư mục bất kỳ lúc nào.
+- Để dùng trên máy khác: copy toàn bộ thư mục sang USB, cắm vào máy mới, chạy lại:
+
+```cmd
+cd Spaling-AudioBook
+install.bat
+```
+
+  install.bat sẽ bỏ qua các thành phần đã có (không tải lại từ mạng), chỉ đồng bộ lại liên kết pnpm và kiểm tra toàn bộ. Bản chất chạy lại là "sửa chữa/bổ sung" chứ không xóa dữ liệu.
+- Không cần cài đặt bất kỳ chương trình nào trước trên máy mới.
+- Ổ chứa cần tối thiểu 35 GB trống khi cài đầy đủ model AI.
+
 ## Bật ứng dụng
 
 Mở **Spaling Audiobook** từ Desktop hoặc Start Menu.
