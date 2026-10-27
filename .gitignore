@@ -33,6 +33,7 @@ logs/
 # --- Private development material ---
 *.md
 !README.md
+!.agents/**/*.md
 *.example.yaml
 tests/
 **/tests/

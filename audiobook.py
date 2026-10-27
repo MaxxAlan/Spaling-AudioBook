@@ -733,8 +733,8 @@ def run_web(args: argparse.Namespace) -> int:
 
 
 def run_generate_story(args: argparse.Namespace) -> int:
-    from audio_comic.ai.context.loader import load_context_files, build_context_prompt
-    from audio_comic.ai.ollama_helper import OllamaNarrationHelper
+    from ai.context.loader import load_context_files, build_context_prompt
+    from ai.ollama_helper import OllamaNarrationHelper
     chapter_path = Path(args.chapter).expanduser().resolve()
     if not chapter_path.is_file():
         print(f"Loi: Khong tim thay chapter: {chapter_path}", file=sys.stderr)
