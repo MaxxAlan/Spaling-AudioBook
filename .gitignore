@@ -34,6 +34,8 @@ logs/
 *.md
 !README.md
 !.agents/**/*.md
+!.agents/**/*.md
+!support-AI/**/*.md
 *.example.yaml
 tests/
 **/tests/
