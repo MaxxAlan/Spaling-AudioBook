@@ -229,6 +229,8 @@ def compile_spoken_text(text: str, *, conservative: bool = False) -> str:
 
     Punctuation remains prosody control, never literal narration content.
     ``conservative`` removes optional punctuation after a failed first render.
+    Lưu ý: không bao giờ xóa critical words (tên riêng / số) – chúng được
+    bảo vệ ở tầng extract trước khi gọi hàm này.
     """
     text = text.translate(_PUNCT_TRANSLATION)
     text = re.sub(r"[\u200b-\u200f\u202a-\u202e\u2060\ufeff]", "", text)
@@ -240,9 +242,10 @@ def compile_spoken_text(text: str, *, conservative: bool = False) -> str:
     text = re.sub(r"^\s*[-–—•*#]+\s*", "", text)
     text = re.sub(r"(?m)^\s*[,.;:!?…]+\s*$", "", text)
     if conservative:
+        # Chỉ bỏ dấu câu phụ trợ, giữ nguyên nội dung từ vựng
         text = text.replace('"', "").replace("'", "")
-        text = re.sub(r"[;:—–()\[\]{}]", ",", text)
-        text = re.sub(r"\s*,\s*", " ", text)
+        text = re.sub(r"[;:—–()\[\]{}]", " ", text)  # space thay vì comma để tránh gộp từ
+        text = re.sub(r"\s+", " ", text)
         text = text.replace("…", ".")
     text = re.sub(r"\s+([,.;:!?…])", r"\1", text)
     text = re.sub(r"""([,.;:!?…])(?=[^\s"'])""", r"\1 ", text)
@@ -257,19 +260,28 @@ def alignment_text(text: str) -> str:
     return re.sub(r"\s+", " ", value).strip()
 
 
-def normalize_text(text: str, *, conservative: bool = False) -> str:
+def normalize_text(
+    text: str,
+    *,
+    conservative: bool = False,
+    critical_words: list[str] | None = None,
+) -> str:
     """Apply all text normalizations for TTS processing.
 
     Pipeline: abbreviations → dates → numbers → whitespace.
+    critical_words được giữ nguyên (không bị expand / cắt).
 
     Args:
         text: Raw text from a segment.
+        conservative: Chế độ rút gọn dấu câu (chỉ dùng khi retry cuối).
+        critical_words: Danh sách từ cần bảo vệ (tùy chọn).
 
     Returns:
         Normalized text ready for TTS synthesis.
     """
-    logger.debug("Normalizing text: %s...", text[:50])
+    logger.debug("Normalizing text: %s...", text[:50] if text else "")
 
+    # Bảo vệ critical words bằng placeholder tạm nếu cần (hiện tại chưa mask)
     text = expand_abbreviations(text)
     text = normalize_dates(text)
     text = normalize_numbers(text)

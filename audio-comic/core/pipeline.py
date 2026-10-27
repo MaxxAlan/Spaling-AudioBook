@@ -18,6 +18,7 @@ from models.project import Project
 from models.segment import Segment, SegmentType
 from text_processing.script_analyzer import analyze_script
 from text_processing.normalizer import NORMALIZATION_VERSION, normalize_text
+from text_processing.critical_words import extract_critical_words
 from audio.concatenator import concatenate_segments
 from audio.quality import verify_tts_wav
 from audio.semantic_quality import LocalSpeechVerifier
@@ -226,8 +227,14 @@ class Pipeline:
                         sm.mark_segment_complete(segment.segment_id)
                     continue
 
-                # Check cache
-                normalized_text = normalize_text(segment.text)
+                # ── Extract critical words (bảo vệ tên riêng / số / thuật ngữ)
+                if not getattr(segment, "critical_words", None):
+                    segment.critical_words = extract_critical_words(segment.text)
+
+                # Check cache – luôn dùng bản normalize đầy đủ (không conservative)
+                normalized_text = normalize_text(
+                    segment.text, conservative=False, critical_words=segment.critical_words
+                )
                 cache_key = self._cache.get_cache_key(
                     normalized_text,
                     segment.voice_id or "default",
@@ -243,7 +250,9 @@ class Pipeline:
                     if mock_tts:
                         valid, reasons = True, []
                     if valid and self._semantic_verifier is not None:
-                        review = self._semantic_verifier.verify(cached_path, normalized_text)
+                        review = self._semantic_verifier.verify(
+                            cached_path, normalized_text, critical_words=segment.critical_words
+                        )
                         semantic_reviews[segment.segment_id] = review.to_dict()
                         valid, reasons = review.approved, review.reasons
                     if valid:
@@ -254,19 +263,46 @@ class Pipeline:
                         if sm:
                             sm.mark_segment_complete(segment.segment_id)
                         continue
-                    logger.warning("Rejecting bad cached segment %d: %s", segment.segment_id, ", ".join(reasons))
+                    logger.warning(
+                        "Rejecting bad cached segment %d: %s",
+                        segment.segment_id, ", ".join(reasons),
+                    )
                     self._cache.invalidate(cache_key)
 
-                # Synthesize
+                # ── Synthesize với retry thông minh (P0 anti-miss)
                 seg_path = str(segments_dir / f"segment_{segment.segment_id:04d}.wav")
                 try:
                     result_path = ""
                     last_reasons: list[str] = []
-                    for attempt in range(1, 3):
-                        attempt_text = normalize_text(segment.text, conservative=attempt > 1)
+                    max_attempts = 3  # tăng nhẹ so với 2
+
+                    for attempt in range(1, max_attempts + 1):
+                        # Chỉ dùng conservative ở lần cuối cùng nếu vẫn fail
+                        use_conservative = attempt == max_attempts and last_reasons
+                        attempt_text = normalize_text(
+                            segment.text,
+                            conservative=use_conservative,
+                            critical_words=segment.critical_words,
+                        )
+
+                        # Override tham số theo attempt
+                        opts = dict(segment.inference_options or {})
+                        if attempt == 1:
+                            # Lần 1: ổn định, max_chars cao
+                            opts.setdefault("temperature", 0.48)
+                            opts.setdefault("max_chars", 360)
+                        elif attempt == 2:
+                            # Lần 2: hạ temp + tăng max_chars, seed khác
+                            opts["temperature"] = max(0.28, opts.get("temperature", 0.5) - 0.12)
+                            opts["max_chars"] = min(480, opts.get("max_chars", 360) + 60)
+                            # Thay seed để tránh lặp lại lỗi stochastic
+                            if hasattr(self._tts, "_seed"):
+                                self._tts._seed = (self._tts._seed + segment.segment_id * 17 + attempt) % 2**31
+
                         set_options = getattr(self._tts, "set_segment_options", None)
                         if set_options:
-                            set_options(segment.inference_options)
+                            set_options(opts)
+
                         result_path = self._tts.synthesize(
                             text=attempt_text,
                             voice_id=segment.voice_id or "narrator_male_01",
@@ -278,32 +314,58 @@ class Pipeline:
                         valid, last_reasons = verify_tts_wav(result_path, attempt_text)
                         if mock_tts:
                             valid, last_reasons = True, []
+
                         if valid and self._semantic_verifier is not None:
-                            review = self._semantic_verifier.verify(result_path, attempt_text)
+                            review = self._semantic_verifier.verify(
+                                result_path,
+                                attempt_text,
+                                critical_words=segment.critical_words,
+                            )
                             semantic_reviews[segment.segment_id] = review.to_dict()
                             valid, last_reasons = review.approved, review.reasons
+
                         if valid:
                             cache_key = self._cache.get_cache_key(
                                 attempt_text,
                                 segment.voice_id or "default",
                                 segment.speed,
                                 segment.pitch,
-                                model_version=f"{self._tts.provider_name}:{NORMALIZATION_VERSION}:{json.dumps(segment.inference_options, sort_keys=True)}",
+                                model_version=(
+                                    f"{self._tts.provider_name}:{NORMALIZATION_VERSION}:"
+                                    f"{json.dumps(opts, sort_keys=True)}"
+                                ),
                             )
                             segment.cache_key = cache_key
+                            segment.inference_options = opts
                             break
-                        logger.warning("Rejected TTS segment %d attempt %d: %s", segment.segment_id, attempt, ", ".join(last_reasons))
+
+                        logger.warning(
+                            "Rejected TTS segment %d attempt %d: %s",
+                            segment.segment_id, attempt, ", ".join(last_reasons),
+                        )
                         Path(result_path).unlink(missing_ok=True)
+
                         policy = getattr(self._ai_helper, "parameter_policy", None)
-                        if policy and attempt < 2:
-                            segment.inference_options = propose_retry(segment.inference_options, last_reasons, policy)
-                            segment.attempt_history.append({"attempt": attempt, "config": segment.inference_options, "issues": last_reasons})
+                        if policy and attempt < max_attempts:
+                            segment.inference_options = propose_retry(
+                                opts, last_reasons, policy
+                            )
+                            segment.attempt_history.append({
+                                "attempt": attempt,
+                                "config": dict(segment.inference_options),
+                                "issues": list(last_reasons),
+                            })
+
                     if not result_path or last_reasons:
                         raise TTSGenerationError(
                             f"Kiểm duyệt thất bại segment {segment.segment_id}",
                             details=", ".join(last_reasons),
                         )
-                    self._cache.store(cache_key, result_path, {"project_id": project.project_id, "segment_id": segment.segment_id})
+                    self._cache.store(
+                        cache_key,
+                        result_path,
+                        {"project_id": project.project_id, "segment_id": segment.segment_id},
+                    )
                     segment.audio_path = result_path
                     segment.cached = True
                     segment_files.append((result_path, segment.pause_after_ms, segment))
@@ -345,8 +407,11 @@ class Pipeline:
                 for path, _pause, segment in segment_files:
                     if not path or segment.segment_id in semantic_reviews:
                         continue
+                    crit = getattr(segment, "critical_words", None) or extract_critical_words(segment.text)
                     review = self._semantic_verifier.verify(
-                        path, normalize_text(segment.text)
+                        path,
+                        normalize_text(segment.text, critical_words=crit),
+                        critical_words=crit,
                     )
                     semantic_reviews[segment.segment_id] = review.to_dict()
                 semantic_rejected = [

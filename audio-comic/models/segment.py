@@ -60,6 +60,9 @@ class Segment:
     reading_instruction: str = ""
     inference_options: dict = field(default_factory=dict)
     attempt_history: list = field(default_factory=list)
+    # Từ quan trọng cần bảo vệ khi TTS (tên riêng, số, thuật ngữ).
+    # Được extract tự động + có thể bổ sung từ Character Bible.
+    critical_words: list = field(default_factory=list)
 
     def to_dict(self) -> dict:
         """Serialize to dictionary for JSON export."""
@@ -69,9 +72,11 @@ class Segment:
 
     @classmethod
     def from_dict(cls, data: dict) -> Segment:
-        """Deserialize from dictionary."""
+        """Deserialize from dictionary (backward-compatible)."""
         data = dict(data)  # shallow copy
         data["type"] = SegmentType(data["type"])
+        # Field mới: critical_words – bỏ qua nếu bản cũ không có
+        data.setdefault("critical_words", [])
         return cls(**data)
 
     @property

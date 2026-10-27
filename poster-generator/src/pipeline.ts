@@ -113,8 +113,23 @@ export async function runPipeline(options: PipelineOptions, env: Environment, co
     .map((match)=>match[1]!.replace(/\s*\([^)]*\)\s*$/, '').trim())
     .filter((name)=>name!==name.toLocaleUpperCase('vi')&&chapterLower.includes(name.toLocaleLowerCase('vi')));
   analysis.charactersPresent=[...new Set([...contextCharacterNames,...analysis.charactersPresent])];
-  const resolved = resolveContinuity(canon, position, analysis); const references = await loadReferences(projectRoot, options.references); const detectedCharacters = resolveCharacterVisuals(analysis, chapter, canon, references); const state = mergeCharacterState(await loadCharacterState(projectRoot), detectedCharacters); await saveCharacterState(projectRoot, state);
-  const characters = detectedCharacters.map((character) => state.characters[character.characterId] ?? character);
+  const resolved = resolveContinuity(canon, position, analysis);
+  const references = await loadReferences(projectRoot, options.references);
+  const detectedCharacters = resolveCharacterVisuals(analysis, chapter, canon, references);
+  // P0: Character Bible – khóa face/hair/eyes/skin/body, chỉ cho phép clothing/injuries thay đổi
+  const { enforceBibles } = await import('./characters/character-bible.js');
+  const previousState = await loadCharacterState(projectRoot);
+  const { state: bibleState, visuals: enforcedVisuals } = await enforceBibles(
+    projectRoot,
+    previousState,
+    detectedCharacters,
+    chapter.path,
+  );
+  const state = mergeCharacterState(bibleState, enforcedVisuals);
+  await saveCharacterState(projectRoot, state);
+  const characters = enforcedVisuals.map(
+    (character) => state.characters[character.characterId] ?? character,
+  );
   const candidates = rankScenes(analysis.scenes,options.sceneWeights); const concepts = buildConcepts(candidates); const selected = selectConcept(concepts, options.concept); const brief = buildBrief(analysis, selected, candidates, characters); assertBriefSpoilerSafe(brief, chapter.text);
   const requestedStoryboardCount = options.storyboardCount && options.storyboardCount > 0 ? options.storyboardCount : autoStoryboardCount(candidates, options.quality);
   options.onProgress?.(`[storyboard] AI chon ${requestedStoryboardCount} canh uu tien tu ${candidates.length} canh co bang chung.`);

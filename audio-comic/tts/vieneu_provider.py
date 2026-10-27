@@ -33,11 +33,11 @@ class VieNeuTTSProvider(TTSProvider):
         cache_dir: str = "",
         default_voice: str = "Thanh Bình",
         style: str = "doc_truyen",
-        temperature: float = 0.6,
+        temperature: float = 0.5,          # ↓ từ 0.6 → ổn định hơn, giảm miss từ
         top_k: int = 20,
         top_p: float = 0.88,
         repetition_penalty: float = 1.15,
-        max_chars: int = 256,
+        max_chars: int = 360,              # ↑ từ 256 → giảm cắt câu tiếng Việt
         pitch_ratio: float = 0.936,
         tempo_ratio: float = 1.019,
         voice_registry_path: str = "",
