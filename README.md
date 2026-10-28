@@ -74,4 +74,14 @@ Nếu cài từ mã nguồn:
 uninstall.bat
 ```
 
+## Cấu trúc dự án & AI Agents
+
+Xem thư mục [`.agents/`](.agents/) để có bản đồ đầy đủ:
+
+- `00_OVERVIEW.md` – cấu trúc thư mục + quy tắc làm việc
+- `01_PYTHON_MAP.md` – map module/hàm Python
+- `02_TYPESCRIPT_MAP.md` – map TypeScript (poster-generator)
+- `03_WORKFLOWS.md` – các luồng chạy phổ biến
+- `04_CONVENTIONS.md` – convention code + quy tắc cho AI agents
+
 Copyright (c) 2026 MaxxAlan. All Rights Reserved.
