@@ -99,17 +99,23 @@ def missing_critical_words(
     """Trả về danh sách critical words bị thiếu trong transcript ASR.
 
     So khớp case-insensitive, cho phép biến thể nhẹ (bỏ dấu câu).
+    Bỏ qua critical word không còn xuất hiện trong ``source`` vì normalizer
+    hoặc từ điển phát âm đã thay nó bằng dạng đọc (số → chữ, tên riêng →
+    phiên âm). Những từ đó được kiểm tra gián tiếp qua WER/CER.
     """
     if not critical:
         return []
 
     actual = re.sub(r"[^\w\sđĐ]", " ", transcript.casefold())
     actual = re.sub(r"\s+", " ", actual).strip()
+    source_compact = re.sub(r"[^\wđĐ]", "", source.casefold())
     missing: List[str] = []
 
     for word in critical:
         key = re.sub(r"[^\wđĐ]", "", word.casefold())
         if len(key) < 2:
+            continue
+        if key not in source_compact:
             continue
         # Cho phép match gần đúng (số / tên)
         if key not in actual.replace(" ", "") and key not in actual:

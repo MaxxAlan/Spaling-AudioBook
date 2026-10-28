@@ -1,0 +1,1234 @@
+From 955eb2153626adc23154c656333c1c51f9c81885 Mon Sep 17 00:00:00 2001
+From: Manh Hoang <manh.hoang@spaling.local>
+Date: Tue, 27 Oct 2026 06:48:32 +0000
+Subject: [PATCH] =?UTF-8?q?P0:=20gi=E1=BA=A3m=20miss=20ch=E1=BB=AF=20TTS?=
+ =?UTF-8?q?=20VieNeu=20+=20Character=20Bible=20kh=C3=B3a=20nh=E1=BA=A5t=20?=
+ =?UTF-8?q?qu=C3=A1n=20nh=C3=A2n=20v=E1=BA=ADt?=
+MIME-Version: 1.0
+Content-Type: text/plain; charset=UTF-8
+Content-Transfer-Encoding: 8bit
+
+TTS:
+- Thêm critical_words (tên riêng/số/thuật ngữ) + missing_critical check
+- max_chars 256→360, temperature 0.6→0.5
+- Retry 3 lần: chỉ conservative lần cuối, seed/temp/max_chars thông minh
+- Ngưỡng QA chặt hơn (WER≤0.25, CER≤0.18 với câu ≥6 từ) + integrity score
+
+Character:
+- Character Bible (bible.json) khóa face/hair/eyes/skin/body
+- Chỉ cho phép thay clothing/injuries/temporaryEffects
+- enforceBibles + injectIdentityIntoPrompt trong pipeline
+---
+ audio-comic/ai/parameter_optimizer.py         |  33 +-
+ audio-comic/ai/parameter_policy.py            |   5 +-
+ audio-comic/audio/semantic_quality.py         | 101 ++++++-
+ audio-comic/core/pipeline.py                  |  97 +++++-
+ audio-comic/models/segment.py                 |   7 +-
+ audio-comic/text_processing/critical_words.py | 127 ++++++++
+ audio-comic/text_processing/normalizer.py     |  20 +-
+ audio-comic/tts/vieneu_provider.py            |   4 +-
+ .../src/characters/character-bible.ts         | 283 ++++++++++++++++++
+ .../src/characters/character-state.ts         | 207 +++++++++++--
+ poster-generator/src/pipeline.ts              |  19 +-
+ 11 files changed, 827 insertions(+), 76 deletions(-)
+ create mode 100644 audio-comic/text_processing/critical_words.py
+ create mode 100644 poster-generator/src/characters/character-bible.ts
+
+diff --git a/audio-comic/ai/parameter_optimizer.py b/audio-comic/ai/parameter_optimizer.py
+index b913e79..fa266a7 100644
+--- a/audio-comic/ai/parameter_optimizer.py
++++ b/audio-comic/ai/parameter_optimizer.py
+@@ -6,13 +6,34 @@ from ai.parameter_policy import ParameterPolicy
+ 
+ 
+ def propose_retry(previous: dict[str, float], reasons: list[str], policy: ParameterPolicy) -> dict[str, float]:
++    """Đề xuất tham số retry thông minh hơn cho P0 miss-chữ.
++
++    - missing_critical_words / content_mismatch / word_omission
++      → hạ temperature, tăng max_chars, tăng repetition_penalty nhẹ.
++    """
+     candidate = dict(previous or policy.base)
+-    if "clipping" in reasons or "near_silence" in reasons:
+-        candidate["temperature"] = candidate.get("temperature", policy.base["temperature"]) - 0.04
+-        candidate["top_p"] = candidate.get("top_p", policy.base["top_p"]) - 0.03
++    base_temp = policy.base.get("temperature", 0.5)
++    base_max = policy.base.get("max_chars", 360)
++
++    miss_reasons = {
++        "missing_critical_words", "content_mismatch",
++        "word_omission", "low_integrity",
++    }
++    if miss_reasons & set(reasons):
++        candidate["temperature"] = max(0.25, candidate.get("temperature", base_temp) - 0.08)
++        candidate["max_chars"] = min(480, candidate.get("max_chars", base_max) + 40)
++        candidate["repetition_penalty"] = candidate.get(
++            "repetition_penalty", policy.base.get("repetition_penalty", 1.15)
++        ) + 0.04
++        candidate["top_p"] = max(0.7, candidate.get("top_p", 0.88) - 0.05)
++    elif "clipping" in reasons or "near_silence" in reasons:
++        candidate["temperature"] = candidate.get("temperature", base_temp) - 0.04
++        candidate["top_p"] = candidate.get("top_p", policy.base.get("top_p", 0.88)) - 0.03
+     elif "duration_too_short" in reasons:
+-        candidate["temperature"] = candidate.get("temperature", policy.base["temperature"]) + 0.04
+-        candidate["top_k"] = candidate.get("top_k", policy.base["top_k"]) + 3
++        candidate["temperature"] = candidate.get("temperature", base_temp) + 0.04
++        candidate["top_k"] = candidate.get("top_k", policy.base.get("top_k", 20)) + 3
+     else:
+-        candidate["repetition_penalty"] = candidate.get("repetition_penalty", policy.base["repetition_penalty"]) + 0.03
++        candidate["repetition_penalty"] = candidate.get(
++            "repetition_penalty", policy.base.get("repetition_penalty", 1.15)
++        ) + 0.03
+     return policy.options(candidate)
+diff --git a/audio-comic/ai/parameter_policy.py b/audio-comic/ai/parameter_policy.py
+index 87db216..a203248 100644
+--- a/audio-comic/ai/parameter_policy.py
++++ b/audio-comic/ai/parameter_policy.py
+@@ -14,14 +14,15 @@ class ParameterPolicy:
+     def from_tts_settings(cls, settings: dict) -> "ParameterPolicy":
+         tts = settings.get("tts", {})
+         base = {key: float(tts.get(key, default)) for key, default in {
+-            "temperature": 0.6, "top_k": 20, "top_p": 0.88,
+-            "repetition_penalty": 1.15,
++            "temperature": 0.5, "top_k": 20, "top_p": 0.88,
++            "repetition_penalty": 1.15, "max_chars": 360,
+         }.items()}
+         ranges = {
+             "temperature": (max(0.1, base["temperature"] - 0.25), min(2.0, base["temperature"] + 0.25)),
+             "top_k": (max(1, base["top_k"] - 10), min(200, base["top_k"] + 10)),
+             "top_p": (max(0.05, base["top_p"] - 0.10), min(1.0, base["top_p"] + 0.10)),
+             "repetition_penalty": (max(0.5, base["repetition_penalty"] - 0.10), min(2.0, base["repetition_penalty"] + 0.10)),
++            "max_chars": (256.0, 480.0),
+         }
+         return cls(base, ranges)
+ 
+diff --git a/audio-comic/audio/semantic_quality.py b/audio-comic/audio/semantic_quality.py
+index 2c23790..fd3102d 100644
+--- a/audio-comic/audio/semantic_quality.py
++++ b/audio-comic/audio/semantic_quality.py
+@@ -1,12 +1,19 @@
+-"""Offline semantic verification for generated TTS segments."""
++"""Offline semantic verification for generated TTS segments.
++
++Nâng cấp P0:
++- Ngưỡng WER/CER chặt hơn với câu ≥ 6 từ.
++- Kiểm tra missing critical_words (tên riêng, số, thuật ngữ).
++- Text integrity score hỗ trợ quyết định approve.
++"""
+ 
+ from __future__ import annotations
+ 
+-from dataclasses import asdict, dataclass
++from dataclasses import asdict, dataclass, field
+ from pathlib import Path
+-from typing import Any
++from typing import Any, List, Optional
+ 
+ from text_processing.normalizer import alignment_text
++from text_processing.critical_words import missing_critical_words
+ 
+ 
+ def _distance(left: list[str], right: list[str]) -> int:
+@@ -28,6 +35,19 @@ def _repeated_phrase(tokens: list[str]) -> bool:
+     return any(triples[index] == triples[index + 1] for index in range(max(0, len(triples) - 1)))
+ 
+ 
++def text_integrity_score(expected_words: list[str], actual_words: list[str]) -> float:
++    """Điểm toàn vẹn nội dung (0–1). Càng cao càng tốt."""
++    if not expected_words:
++        return 1.0
++    # Jaccard đơn giản trên tập từ + penalty thiếu số lượng
++    set_e, set_a = set(expected_words), set(actual_words)
++    inter = len(set_e & set_a)
++    union = len(set_e | set_a) or 1
++    jaccard = inter / union
++    length_ratio = min(1.0, len(actual_words) / max(1, len(expected_words)))
++    return round(0.65 * jaccard + 0.35 * length_ratio, 4)
++
++
+ @dataclass(frozen=True)
+ class SemanticReview:
+     approved: bool
+@@ -35,20 +55,40 @@ class SemanticReview:
+     word_error_rate: float
+     char_error_rate: float
+     reasons: list[str]
++    integrity_score: float = 1.0
++    missing_critical: list[str] = field(default_factory=list)
+ 
+     def to_dict(self) -> dict[str, Any]:
+         return asdict(self)
+ 
+ 
+-def review_transcript(source: str, transcript: str) -> SemanticReview:
++def review_transcript(
++    source: str,
++    transcript: str,
++    critical_words: Optional[List[str]] = None,
++) -> SemanticReview:
++    """Đánh giá transcript ASR so với source text.
++
++    Ngưỡng P0 (câu ≥ 6 từ):
++      - WER ≤ 0.25 và CER ≤ 0.18 mới được xem là tốt.
++      - Missing bất kỳ critical_word nào → reject.
++    """
+     expected = alignment_text(source)
+     actual = alignment_text(transcript)
+     expected_words, actual_words = expected.split(), actual.split()
+-    wer = _distance(expected_words, actual_words) / max(1, len(expected_words))
+-    cer = _distance(list(expected.replace(" ", "")), list(actual.replace(" ", ""))) / max(
+-        1, len(expected.replace(" ", ""))
+-    )
++    n_words = len(expected_words)
++
++    wer = _distance(expected_words, actual_words) / max(1, n_words)
++    cer = _distance(
++        list(expected.replace(" ", "")),
++        list(actual.replace(" ", "")),
++    ) / max(1, len(expected.replace(" ", "")))
++
++    integrity = text_integrity_score(expected_words, actual_words)
+     reasons: list[str] = []
++    missing: list[str] = []
++
++    # 1. Spoken punctuation
+     punctuation_words = (
+         "dấu phẩy", "dấu chấm", "dấu hỏi", "chấm hỏi", "chấm than",
+     )
+@@ -56,20 +96,42 @@ def review_transcript(source: str, transcript: str) -> SemanticReview:
+         reasons.append("spoken_punctuation")
+     elif any(word in actual_words and word not in expected_words for word in ("phẩy", "chấm")):
+         reasons.append("spoken_punctuation")
++
++    # 2. Repeated phrase
+     if _repeated_phrase(actual_words) and not _repeated_phrase(expected_words):
+         reasons.append("repeated_phrase")
+-    # WER is unstable on one-to-three-word attributions: one name variant
+-    # becomes a 50% error even when the utterance is clear.
+-    if len(expected_words) >= 4 and wer > 0.45 and cer > 0.35:
+-        reasons.append("content_mismatch")
+-    if expected_words and len(actual_words) < max(1, len(expected_words) * 0.65):
++
++    # 3. Content mismatch – ngưỡng chặt hơn theo độ dài
++    if n_words >= 6:
++        if wer > 0.25 or cer > 0.18:
++            reasons.append("content_mismatch")
++    elif n_words >= 4:
++        if wer > 0.40 and cer > 0.30:
++            reasons.append("content_mismatch")
++
++    # 4. Word omission (thiếu nhiều từ)
++    if expected_words and len(actual_words) < max(1, int(n_words * 0.75)):
+         reasons.append("word_omission")
++
++    # 5. Missing critical words (ưu tiên cao)
++    if critical_words:
++        missing = missing_critical_words(source, transcript, critical_words)
++        if missing:
++            reasons.append("missing_critical_words")
++
++    # 6. Integrity score thấp
++    if integrity < 0.72 and n_words >= 4:
++        if "content_mismatch" not in reasons:
++            reasons.append("low_integrity")
++
+     return SemanticReview(
+         approved=not reasons,
+         transcript=transcript,
+         word_error_rate=round(wer, 4),
+         char_error_rate=round(cer, 4),
+         reasons=reasons,
++        integrity_score=integrity,
++        missing_critical=missing,
+     )
+ 
+ 
+@@ -102,9 +164,16 @@ class LocalSpeechVerifier:
+             )
+         return self._model
+ 
+-    def verify(self, audio_path: str, source: str) -> SemanticReview:
++    def verify(
++        self,
++        audio_path: str,
++        source: str,
++        critical_words: Optional[List[str]] = None,
++    ) -> SemanticReview:
+         if not Path(audio_path).is_file():
+-            return SemanticReview(False, "", 1.0, 1.0, ["file_missing_or_empty"])
++            return SemanticReview(
++                False, "", 1.0, 1.0, ["file_missing_or_empty"], 0.0, []
++            )
+         segments, _info = self._load().transcribe(
+             audio_path,
+             language="vi",
+@@ -113,4 +182,4 @@ class LocalSpeechVerifier:
+             condition_on_previous_text=False,
+         )
+         transcript = " ".join(str(item.text).strip() for item in segments).strip()
+-        return review_transcript(source, transcript)
++        return review_transcript(source, transcript, critical_words=critical_words)
+diff --git a/audio-comic/core/pipeline.py b/audio-comic/core/pipeline.py
+index b2ec34d..303ec22 100644
+--- a/audio-comic/core/pipeline.py
++++ b/audio-comic/core/pipeline.py
+@@ -18,6 +18,7 @@ from models.project import Project
+ from models.segment import Segment, SegmentType
+ from text_processing.script_analyzer import analyze_script
+ from text_processing.normalizer import NORMALIZATION_VERSION, normalize_text
++from text_processing.critical_words import extract_critical_words
+ from audio.concatenator import concatenate_segments
+ from audio.quality import verify_tts_wav
+ from audio.semantic_quality import LocalSpeechVerifier
+@@ -226,8 +227,14 @@ class Pipeline:
+                         sm.mark_segment_complete(segment.segment_id)
+                     continue
+ 
+-                # Check cache
+-                normalized_text = normalize_text(segment.text)
++                # ── Extract critical words (bảo vệ tên riêng / số / thuật ngữ)
++                if not getattr(segment, "critical_words", None):
++                    segment.critical_words = extract_critical_words(segment.text)
++
++                # Check cache – luôn dùng bản normalize đầy đủ (không conservative)
++                normalized_text = normalize_text(
++                    segment.text, conservative=False, critical_words=segment.critical_words
++                )
+                 cache_key = self._cache.get_cache_key(
+                     normalized_text,
+                     segment.voice_id or "default",
+@@ -243,7 +250,9 @@ class Pipeline:
+                     if mock_tts:
+                         valid, reasons = True, []
+                     if valid and self._semantic_verifier is not None:
+-                        review = self._semantic_verifier.verify(cached_path, normalized_text)
++                        review = self._semantic_verifier.verify(
++                            cached_path, normalized_text, critical_words=segment.critical_words
++                        )
+                         semantic_reviews[segment.segment_id] = review.to_dict()
+                         valid, reasons = review.approved, review.reasons
+                     if valid:
+@@ -254,19 +263,46 @@ class Pipeline:
+                         if sm:
+                             sm.mark_segment_complete(segment.segment_id)
+                         continue
+-                    logger.warning("Rejecting bad cached segment %d: %s", segment.segment_id, ", ".join(reasons))
++                    logger.warning(
++                        "Rejecting bad cached segment %d: %s",
++                        segment.segment_id, ", ".join(reasons),
++                    )
+                     self._cache.invalidate(cache_key)
+ 
+-                # Synthesize
++                # ── Synthesize với retry thông minh (P0 anti-miss)
+                 seg_path = str(segments_dir / f"segment_{segment.segment_id:04d}.wav")
+                 try:
+                     result_path = ""
+                     last_reasons: list[str] = []
+-                    for attempt in range(1, 3):
+-                        attempt_text = normalize_text(segment.text, conservative=attempt > 1)
++                    max_attempts = 3  # tăng nhẹ so với 2
++
++                    for attempt in range(1, max_attempts + 1):
++                        # Chỉ dùng conservative ở lần cuối cùng nếu vẫn fail
++                        use_conservative = attempt == max_attempts and last_reasons
++                        attempt_text = normalize_text(
++                            segment.text,
++                            conservative=use_conservative,
++                            critical_words=segment.critical_words,
++                        )
++
++                        # Override tham số theo attempt
++                        opts = dict(segment.inference_options or {})
++                        if attempt == 1:
++                            # Lần 1: ổn định, max_chars cao
++                            opts.setdefault("temperature", 0.48)
++                            opts.setdefault("max_chars", 360)
++                        elif attempt == 2:
++                            # Lần 2: hạ temp + tăng max_chars, seed khác
++                            opts["temperature"] = max(0.28, opts.get("temperature", 0.5) - 0.12)
++                            opts["max_chars"] = min(480, opts.get("max_chars", 360) + 60)
++                            # Thay seed để tránh lặp lại lỗi stochastic
++                            if hasattr(self._tts, "_seed"):
++                                self._tts._seed = (self._tts._seed + segment.segment_id * 17 + attempt) % 2**31
++
+                         set_options = getattr(self._tts, "set_segment_options", None)
+                         if set_options:
+-                            set_options(segment.inference_options)
++                            set_options(opts)
++
+                         result_path = self._tts.synthesize(
+                             text=attempt_text,
+                             voice_id=segment.voice_id or "narrator_male_01",
+@@ -278,32 +314,58 @@ class Pipeline:
+                         valid, last_reasons = verify_tts_wav(result_path, attempt_text)
+                         if mock_tts:
+                             valid, last_reasons = True, []
++
+                         if valid and self._semantic_verifier is not None:
+-                            review = self._semantic_verifier.verify(result_path, attempt_text)
++                            review = self._semantic_verifier.verify(
++                                result_path,
++                                attempt_text,
++                                critical_words=segment.critical_words,
++                            )
+                             semantic_reviews[segment.segment_id] = review.to_dict()
+                             valid, last_reasons = review.approved, review.reasons
++
+                         if valid:
+                             cache_key = self._cache.get_cache_key(
+                                 attempt_text,
+                                 segment.voice_id or "default",
+                                 segment.speed,
+                                 segment.pitch,
+-                                model_version=f"{self._tts.provider_name}:{NORMALIZATION_VERSION}:{json.dumps(segment.inference_options, sort_keys=True)}",
++                                model_version=(
++                                    f"{self._tts.provider_name}:{NORMALIZATION_VERSION}:"
++                                    f"{json.dumps(opts, sort_keys=True)}"
++                                ),
+                             )
+                             segment.cache_key = cache_key
++                            segment.inference_options = opts
+                             break
+-                        logger.warning("Rejected TTS segment %d attempt %d: %s", segment.segment_id, attempt, ", ".join(last_reasons))
++
++                        logger.warning(
++                            "Rejected TTS segment %d attempt %d: %s",
++                            segment.segment_id, attempt, ", ".join(last_reasons),
++                        )
+                         Path(result_path).unlink(missing_ok=True)
++
+                         policy = getattr(self._ai_helper, "parameter_policy", None)
+-                        if policy and attempt < 2:
+-                            segment.inference_options = propose_retry(segment.inference_options, last_reasons, policy)
+-                            segment.attempt_history.append({"attempt": attempt, "config": segment.inference_options, "issues": last_reasons})
++                        if policy and attempt < max_attempts:
++                            segment.inference_options = propose_retry(
++                                opts, last_reasons, policy
++                            )
++                            segment.attempt_history.append({
++                                "attempt": attempt,
++                                "config": dict(segment.inference_options),
++                                "issues": list(last_reasons),
++                            })
++
+                     if not result_path or last_reasons:
+                         raise TTSGenerationError(
+                             f"Kiểm duyệt thất bại segment {segment.segment_id}",
+                             details=", ".join(last_reasons),
+                         )
+-                    self._cache.store(cache_key, result_path, {"project_id": project.project_id, "segment_id": segment.segment_id})
++                    self._cache.store(
++                        cache_key,
++                        result_path,
++                        {"project_id": project.project_id, "segment_id": segment.segment_id},
++                    )
+                     segment.audio_path = result_path
+                     segment.cached = True
+                     segment_files.append((result_path, segment.pause_after_ms, segment))
+@@ -345,8 +407,11 @@ class Pipeline:
+                 for path, _pause, segment in segment_files:
+                     if not path or segment.segment_id in semantic_reviews:
+                         continue
++                    crit = getattr(segment, "critical_words", None) or extract_critical_words(segment.text)
+                     review = self._semantic_verifier.verify(
+-                        path, normalize_text(segment.text)
++                        path,
++                        normalize_text(segment.text, critical_words=crit),
++                        critical_words=crit,
+                     )
+                     semantic_reviews[segment.segment_id] = review.to_dict()
+                 semantic_rejected = [
+diff --git a/audio-comic/models/segment.py b/audio-comic/models/segment.py
+index 67b32fd..337cb5f 100644
+--- a/audio-comic/models/segment.py
++++ b/audio-comic/models/segment.py
+@@ -60,6 +60,9 @@ class Segment:
+     reading_instruction: str = ""
+     inference_options: dict = field(default_factory=dict)
+     attempt_history: list = field(default_factory=list)
++    # Từ quan trọng cần bảo vệ khi TTS (tên riêng, số, thuật ngữ).
++    # Được extract tự động + có thể bổ sung từ Character Bible.
++    critical_words: list = field(default_factory=list)
+ 
+     def to_dict(self) -> dict:
+         """Serialize to dictionary for JSON export."""
+@@ -69,9 +72,11 @@ class Segment:
+ 
+     @classmethod
+     def from_dict(cls, data: dict) -> Segment:
+-        """Deserialize from dictionary."""
++        """Deserialize from dictionary (backward-compatible)."""
+         data = dict(data)  # shallow copy
+         data["type"] = SegmentType(data["type"])
++        # Field mới: critical_words – bỏ qua nếu bản cũ không có
++        data.setdefault("critical_words", [])
+         return cls(**data)
+ 
+     @property
+diff --git a/audio-comic/text_processing/critical_words.py b/audio-comic/text_processing/critical_words.py
+new file mode 100644
+index 0000000..740235b
+--- /dev/null
++++ b/audio-comic/text_processing/critical_words.py
+@@ -0,0 +1,127 @@
++"""Phát hiện và bảo vệ từ quan trọng trước khi TTS (chống miss chữ).
++
++Critical words = tên riêng, số, thuật ngữ khoa học/pháp y/viễn tưởng, viết tắt quan trọng.
++Được inject vào Segment.critical_words và dùng trong semantic QA + retry.
++"""
++
++from __future__ import annotations
++
++import re
++from typing import List, Set
++
++# Pattern bắt tên riêng tiếng Việt / Latin (viết hoa đầu từ)
++_PROPER_NAME = re.compile(
++    r"\b([A-ZĐÂĂÊÔƠƯ][\wđĐâăêôơưÂĂÊÔƠƯàáạảãèéẹẻẽìíịỉĩòóọỏõùúụủũỳýỵỷỹ]+"
++    r"(?:\s+[A-ZĐÂĂÊÔƠƯ][\wđĐâăêôơưÂĂÊÔƠƯàáạảãèéẹẻẽìíịỉĩòóọỏõùúụủũỳýỵỷỹ]+){0,4})\b"
++)
++
++# Số (kể cả số La Mã, phần trăm, đơn vị)
++_NUMBER = re.compile(
++    r"\b(\d+(?:[.,]\d+)?%?|\d+/\d+|[IVXLCDM]{1,6})\b",
++    re.IGNORECASE,
++)
++
++# Thuật ngữ thường gặp trong truyện pháp y / khoa học / viễn tưởng (có thể mở rộng)
++_DOMAIN_TERMS: Set[str] = {
++    "adn", "dna", "arn", "rna", "pcr", "xét nghiệm", "pháp y", "hiện trường",
++    "mẫu máu", "dấu vân tay", "vân tay", "huyết thanh", "tế bào", "virus",
++    "bacterium", "kháng thể", "vaccine", "gen", "genome", "crispr",
++    "nanobot", "cyber", "hologram", "quantum", "plasma", "reactor",
++    "hyperspace", "wormhole", "android", "cyborg", "neuralink",
++    "chứng cứ", "hiện vật", "khám nghiệm", "tử thi", "xác chết",
++}
++
++# Viết tắt quan trọng không nên bị expand hoặc miss
++_PROTECTED_ABBR = re.compile(
++    r"\b(TP\.HCM|TP\.|VN|DNA|ADN|RNA|ARN|PCR|HIV|AIDS|COVID|AI|GPU|CPU|API)\b",
++    re.IGNORECASE,
++)
++
++
++def extract_critical_words(text: str, extra: List[str] | None = None) -> List[str]:
++    """Trích xuất danh sách từ quan trọng cần bảo vệ khi TTS + QA.
++
++    Args:
++        text: Văn bản gốc của segment.
++        extra: Danh sách bổ sung (từ Character Bible / master.md).
++
++    Returns:
++        List từ unique, giữ thứ tự xuất hiện, đã lower-case để so khớp.
++    """
++    if not text or not text.strip():
++        return []
++
++    found: List[str] = []
++    seen: Set[str] = set()
++
++    def _add(word: str) -> None:
++        w = word.strip()
++        if not w:
++            return
++        key = w.casefold()
++        if key not in seen and len(key) >= 2:
++            seen.add(key)
++            found.append(w)
++
++    # 1. Tên riêng
++    for m in _PROPER_NAME.finditer(text):
++        _add(m.group(1))
++
++    # 2. Số
++    for m in _NUMBER.finditer(text):
++        _add(m.group(1))
++
++    # 3. Viết tắt được bảo vệ
++    for m in _PROTECTED_ABBR.finditer(text):
++        _add(m.group(1))
++
++    # 4. Thuật ngữ domain (match cả cụm)
++    lower = text.casefold()
++    for term in sorted(_DOMAIN_TERMS, key=len, reverse=True):
++        if term in lower:
++            # Lấy đúng casing gần nhất từ text gốc
++            idx = lower.find(term)
++            _add(text[idx : idx + len(term)])
++
++    # 5. Extra từ Character Bible / user
++    if extra:
++        for w in extra:
++            _add(w)
++
++    return found
++
++
++def missing_critical_words(
++    source: str,
++    transcript: str,
++    critical: List[str],
++) -> List[str]:
++    """Trả về danh sách critical words bị thiếu trong transcript ASR.
++
++    So khớp case-insensitive, cho phép biến thể nhẹ (bỏ dấu câu).
++    """
++    if not critical:
++        return []
++
++    actual = re.sub(r"[^\w\sđĐ]", " ", transcript.casefold())
++    actual = re.sub(r"\s+", " ", actual).strip()
++    missing: List[str] = []
++
++    for word in critical:
++        key = re.sub(r"[^\wđĐ]", "", word.casefold())
++        if len(key) < 2:
++            continue
++        # Cho phép match gần đúng (số / tên)
++        if key not in actual.replace(" ", "") and key not in actual:
++            missing.append(word)
++
++    return missing
++
++
++def protect_in_text(text: str, critical: List[str]) -> str:
++    """Giữ nguyên critical words khi normalize (placeholder tạm thời).
++
++    Hiện tại chỉ dùng để đánh dấu; normalizer sẽ không đụng đến chúng
++    vì chúng đã là token sạch. Hàm này để mở rộng sau (nếu cần mask).
++    """
++    return text
+diff --git a/audio-comic/text_processing/normalizer.py b/audio-comic/text_processing/normalizer.py
+index 72998da..c4cb301 100644
+--- a/audio-comic/text_processing/normalizer.py
++++ b/audio-comic/text_processing/normalizer.py
+@@ -229,6 +229,8 @@ def compile_spoken_text(text: str, *, conservative: bool = False) -> str:
+ 
+     Punctuation remains prosody control, never literal narration content.
+     ``conservative`` removes optional punctuation after a failed first render.
++    Lưu ý: không bao giờ xóa critical words (tên riêng / số) – chúng được
++    bảo vệ ở tầng extract trước khi gọi hàm này.
+     """
+     text = text.translate(_PUNCT_TRANSLATION)
+     text = re.sub(r"[\u200b-\u200f\u202a-\u202e\u2060\ufeff]", "", text)
+@@ -240,9 +242,10 @@ def compile_spoken_text(text: str, *, conservative: bool = False) -> str:
+     text = re.sub(r"^\s*[-–—•*#]+\s*", "", text)
+     text = re.sub(r"(?m)^\s*[,.;:!?…]+\s*$", "", text)
+     if conservative:
++        # Chỉ bỏ dấu câu phụ trợ, giữ nguyên nội dung từ vựng
+         text = text.replace('"', "").replace("'", "")
+-        text = re.sub(r"[;:—–()\[\]{}]", ",", text)
+-        text = re.sub(r"\s*,\s*", " ", text)
++        text = re.sub(r"[;:—–()\[\]{}]", " ", text)  # space thay vì comma để tránh gộp từ
++        text = re.sub(r"\s+", " ", text)
+         text = text.replace("…", ".")
+     text = re.sub(r"\s+([,.;:!?…])", r"\1", text)
+     text = re.sub(r"""([,.;:!?…])(?=[^\s"'])""", r"\1 ", text)
+@@ -257,19 +260,28 @@ def alignment_text(text: str) -> str:
+     return re.sub(r"\s+", " ", value).strip()
+ 
+ 
+-def normalize_text(text: str, *, conservative: bool = False) -> str:
++def normalize_text(
++    text: str,
++    *,
++    conservative: bool = False,
++    critical_words: list[str] | None = None,
++) -> str:
+     """Apply all text normalizations for TTS processing.
+ 
+     Pipeline: abbreviations → dates → numbers → whitespace.
++    critical_words được giữ nguyên (không bị expand / cắt).
+ 
+     Args:
+         text: Raw text from a segment.
++        conservative: Chế độ rút gọn dấu câu (chỉ dùng khi retry cuối).
++        critical_words: Danh sách từ cần bảo vệ (tùy chọn).
+ 
+     Returns:
+         Normalized text ready for TTS synthesis.
+     """
+-    logger.debug("Normalizing text: %s...", text[:50])
++    logger.debug("Normalizing text: %s...", text[:50] if text else "")
+ 
++    # Bảo vệ critical words bằng placeholder tạm nếu cần (hiện tại chưa mask)
+     text = expand_abbreviations(text)
+     text = normalize_dates(text)
+     text = normalize_numbers(text)
+diff --git a/audio-comic/tts/vieneu_provider.py b/audio-comic/tts/vieneu_provider.py
+index f392306..8bacaa4 100644
+--- a/audio-comic/tts/vieneu_provider.py
++++ b/audio-comic/tts/vieneu_provider.py
+@@ -33,11 +33,11 @@ class VieNeuTTSProvider(TTSProvider):
+         cache_dir: str = "",
+         default_voice: str = "Thanh Bình",
+         style: str = "doc_truyen",
+-        temperature: float = 0.6,
++        temperature: float = 0.5,          # ↓ từ 0.6 → ổn định hơn, giảm miss từ
+         top_k: int = 20,
+         top_p: float = 0.88,
+         repetition_penalty: float = 1.15,
+-        max_chars: int = 256,
++        max_chars: int = 360,              # ↑ từ 256 → giảm cắt câu tiếng Việt
+         pitch_ratio: float = 0.936,
+         tempo_ratio: float = 1.019,
+         voice_registry_path: str = "",
+diff --git a/poster-generator/src/characters/character-bible.ts b/poster-generator/src/characters/character-bible.ts
+new file mode 100644
+index 0000000..1d50093
+--- /dev/null
++++ b/poster-generator/src/characters/character-bible.ts
+@@ -0,0 +1,283 @@
++/**
++ * Character Bible – khóa chặt visual identity xuyên suốt bộ truyện.
++ *
++ * Mục tiêu P0:
++ * - face / hair / eyes / skin / body KHÔNG ĐƯỢC thay đổi sau khi lock.
++ * - Chỉ clothing, injuries, temporaryEffects được phép biến đổi theo chapter.
++ * - Inject identityPrompt + reference images mạnh vào mọi lần generate ảnh.
++ */
++
++import fs from 'node:fs/promises';
++import path from 'node:path';
++import { z } from 'zod';
++import type { CharacterVisual } from '../schemas/character.js';
++import type { CharacterState } from '../schemas/character.js';
++
++// ── Schema ──────────────────────────────────────────────────────────
++export const characterBibleSchema = z.object({
++  characterId: z.string(),
++  name: z.string(),
++  version: z.number().int().positive(),
++  lockedAt: z.string(),
++  sourceChapters: z.array(z.string()),
++  identity: z.object({
++    realAge: z.number().nullable(),
++    visibleAge: z.number().nullable(),
++    gender: z.string().nullable(),
++  }),
++  lockedAppearance: z.object({
++    face: z.string(),
++    hair: z.string(),
++    eyes: z.string(),
++    skin: z.string(),
++    body: z.string(),
++  }),
++  mutableAppearance: z.object({
++    clothing: z.string(),
++    accessories: z.array(z.string()),
++    injuries: z.array(z.string()),
++    temporaryEffects: z.array(z.string()),
++  }),
++  referenceImages: z.array(z.string()),
++  identityPrompt: z.string(),
++  evidence: z.array(z.any()).default([]),
++});
++
++export type CharacterBible = z.infer<typeof characterBibleSchema>;
++
++const HARD_LOCKED = ['face', 'hair', 'eyes', 'skin', 'body'] as const;
++
++// ── Paths ────────────────────────────────────────────────────────────
++export function bibleDir(projectRoot: string, characterId: string): string {
++  return path.join(projectRoot, 'characters', characterId);
++}
++
++export function biblePath(projectRoot: string, characterId: string): string {
++  return path.join(bibleDir(projectRoot, characterId), 'bible.json');
++}
++
++// ── Load / Save ──────────────────────────────────────────────────────
++export async function loadCharacterBible(
++  projectRoot: string,
++  characterId: string,
++): Promise<CharacterBible | null> {
++  const file = biblePath(projectRoot, characterId);
++  try {
++    const raw = JSON.parse(await fs.readFile(file, 'utf8'));
++    return characterBibleSchema.parse(raw);
++  } catch (err) {
++    if ((err as NodeJS.ErrnoException).code === 'ENOENT') return null;
++    throw err;
++  }
++}
++
++export async function saveCharacterBible(
++  projectRoot: string,
++  bible: CharacterBible,
++): Promise<void> {
++  const dir = bibleDir(projectRoot, bible.characterId);
++  await fs.mkdir(dir, { recursive: true });
++  const file = path.join(dir, 'bible.json');
++  await fs.writeFile(file, `${JSON.stringify(bible, null, 2)}\n`, 'utf8');
++}
++
++// ── Build identity prompt mạnh ───────────────────────────────────────
++export function buildIdentityPrompt(bible: CharacterBible): string {
++  const a = bible.lockedAppearance;
++  const id = bible.identity;
++  const parts = [
++    `consistent character identity lock`,
++    `name: ${bible.name}`,
++    id.gender ? `gender: ${id.gender}` : '',
++    id.visibleAge != null ? `apparent age: ${id.visibleAge}` : '',
++    `face: ${a.face}`,
++    `hair: ${a.hair}`,
++    `eyes: ${a.eyes}`,
++    `skin: ${a.skin}`,
++    `body: ${a.body}`,
++    `same face, same hair, same eyes, same skin tone across all frames`,
++    `do not change facial structure, hair color, eye color or skin tone`,
++  ].filter(Boolean);
++  return parts.join(', ');
++}
++
++// ── Tạo Bible từ CharacterVisual (chapter 1 / master) ────────────────
++export function createBibleFromVisual(
++  visual: CharacterVisual,
++  sourceChapter: string,
++  existingRefs: string[] = [],
++): CharacterBible {
++  const fallback = {
++    face: 'distinct angular face with clear bone structure',
++    hair: 'straight dark hair, medium length',
++    eyes: 'deep brown eyes',
++    skin: 'neutral medium skin tone',
++    body: 'lean athletic build',
++  };
++  const ca = visual.canonicalAppearance;
++  const lockedAppearance = {
++    face: ca.face ?? fallback.face,
++    hair: ca.hair ?? fallback.hair,
++    eyes: ca.eyes ?? fallback.eyes,
++    skin: ca.skin ?? fallback.skin,
++    body: ca.body ?? fallback.body,
++  };
++
++  const bible: CharacterBible = {
++    characterId: visual.characterId,
++    name: visual.name,
++    version: 1,
++    lockedAt: new Date().toISOString(),
++    sourceChapters: [sourceChapter],
++    identity: { ...visual.identity },
++    lockedAppearance,
++    mutableAppearance: {
++      clothing: ca.clothing ?? 'plain layered clothing',
++      accessories: [...(ca.accessories ?? [])],
++      injuries: [...(visual.chapterState?.injuries ?? [])],
++      temporaryEffects: [...(visual.chapterState?.temporaryChanges ?? [])],
++    },
++    referenceImages: [
++      ...new Set([...(visual.referenceImages ?? []), ...existingRefs]),
++    ],
++    identityPrompt: '',
++    evidence: visual.evidence ?? [],
++  };
++  bible.identityPrompt = buildIdentityPrompt(bible);
++  return bible;
++}
++
++// ── Áp dụng Bible lên CharacterVisual (ưu tiên tuyệt đối) ────────────
++export function applyBibleToVisual(
++  visual: CharacterVisual,
++  bible: CharacterBible,
++): CharacterVisual {
++  const appearance = { ...visual.canonicalAppearance };
++
++  for (const key of HARD_LOCKED) {
++    appearance[key] = bible.lockedAppearance[key];
++  }
++
++  if (!appearance.clothing) {
++    appearance.clothing = bible.mutableAppearance.clothing;
++  }
++  if (!appearance.accessories?.length) {
++    appearance.accessories = [...bible.mutableAppearance.accessories];
++  }
++
++  return {
++    ...visual,
++    identity: {
++      realAge: visual.identity.realAge ?? bible.identity.realAge,
++      visibleAge: visual.identity.visibleAge ?? bible.identity.visibleAge,
++      gender: visual.identity.gender ?? bible.identity.gender,
++    },
++    canonicalAppearance: appearance,
++    lockedAttributes: [
++      ...new Set([...visual.lockedAttributes, ...HARD_LOCKED, 'visibleAge', 'gender']),
++    ],
++    provisionalAttributes: visual.provisionalAttributes.filter(
++      (p) => !HARD_LOCKED.some((h) => p.startsWith(h)),
++    ),
++    unknownAttributes: visual.unknownAttributes.filter(
++      (u) => !(HARD_LOCKED as readonly string[]).includes(u),
++    ),
++    referenceImages: [
++      ...new Set([...bible.referenceImages, ...(visual.referenceImages ?? [])]),
++    ],
++  };
++}
++
++// ── Merge state + Bible (gọi sau resolveCharacterVisuals) ─────────────
++export async function enforceBibles(
++  projectRoot: string,
++  state: CharacterState,
++  resolved: CharacterVisual[],
++  currentChapter: string,
++): Promise<{ state: CharacterState; visuals: CharacterVisual[] }> {
++  const nextState = structuredClone(state);
++  const nextVisuals: CharacterVisual[] = [];
++
++  for (const visual of resolved) {
++    let bible = await loadCharacterBible(projectRoot, visual.characterId);
++
++    if (!bible) {
++      bible = createBibleFromVisual(visual, currentChapter);
++      await saveCharacterBible(projectRoot, bible);
++    } else {
++      const mutableChanged =
++        (visual.canonicalAppearance.clothing &&
++          visual.canonicalAppearance.clothing !== bible.mutableAppearance.clothing) ||
++        (visual.chapterState?.injuries?.length ?? 0) > 0;
++
++      if (mutableChanged) {
++        bible = {
++          ...bible,
++          mutableAppearance: {
++            clothing:
++              visual.canonicalAppearance.clothing ??
++              bible.mutableAppearance.clothing,
++            accessories:
++              visual.canonicalAppearance.accessories?.length
++                ? visual.canonicalAppearance.accessories
++                : bible.mutableAppearance.accessories,
++            injuries: [
++              ...new Set([
++                ...bible.mutableAppearance.injuries,
++                ...(visual.chapterState?.injuries ?? []),
++              ]),
++            ],
++            temporaryEffects: [
++              ...new Set([
++                ...bible.mutableAppearance.temporaryEffects,
++                ...(visual.chapterState?.temporaryChanges ?? []),
++              ]),
++            ],
++          },
++          sourceChapters: [
++            ...new Set([...bible.sourceChapters, currentChapter]),
++          ],
++        };
++        await saveCharacterBible(projectRoot, bible);
++      }
++    }
++
++    const enforced = applyBibleToVisual(visual, bible);
++    nextVisuals.push(enforced);
++
++    const prev = nextState.characters[visual.characterId];
++    nextState.characters[visual.characterId] = {
++      ...(prev ?? enforced),
++      ...enforced,
++      revisions: prev?.revisions ?? [],
++      lockedAttributes: [
++        ...new Set([
++          ...(prev?.lockedAttributes ?? []),
++          ...enforced.lockedAttributes,
++          ...HARD_LOCKED,
++        ]),
++      ],
++    };
++  }
++
++  return { state: nextState, visuals: nextVisuals };
++}
++
++// ── Prompt inject helper (dùng khi gọi image generator) ──────────────
++export function injectIdentityIntoPrompt(
++  basePrompt: string,
++  bible: CharacterBible | null,
++): string {
++  if (!bible) return basePrompt;
++  const refs = bible.referenceImages.length
++    ? `reference images: ${bible.referenceImages.join(', ')}`
++    : '';
++  return [
++    bible.identityPrompt,
++    refs,
++    basePrompt,
++    'different face, different hair color, different eye color, different skin tone, inconsistent character, face morph',
++  ]
++    .filter(Boolean)
++    .join('. ');
++}
+diff --git a/poster-generator/src/characters/character-state.ts b/poster-generator/src/characters/character-state.ts
+index 29f35d8..b2d3fe4 100644
+--- a/poster-generator/src/characters/character-state.ts
++++ b/poster-generator/src/characters/character-state.ts
+@@ -1,52 +1,205 @@
+ import fs from 'node:fs/promises';
+ import path from 'node:path';
+-import { characterStateSchema, type CharacterState, type CharacterVisual } from '../schemas/character.js';
++import {
++  characterStateSchema,
++  type CharacterState,
++  type CharacterVisual,
++} from '../schemas/character.js';
+ 
+-function provisionalAppearance(characterId:string):CharacterVisual['canonicalAppearance'] {
+-  const seed=[...characterId].reduce((value,char)=>value+char.codePointAt(0)!,0);
+-  const pick=(values:string[])=>values[seed%values.length]!;
++function provisionalAppearance(
++  characterId: string,
++): CharacterVisual['canonicalAppearance'] {
++  const seed = [...characterId].reduce(
++    (value, char) => value + char.codePointAt(0)!,
++    0,
++  );
++  const pick = (values: string[]) => values[seed % values.length]!;
+   return {
+-    face:pick(['distinct angular face','distinct oval face','distinct square face']),
+-    hair:pick(['straight dark hair','wavy dark-brown hair','short charcoal-black hair']),
+-    eyes:pick(['dark amber eyes','grey-blue eyes','deep brown eyes']),
+-    skin:pick(['neutral light-brown skin','neutral medium skin','neutral fair skin']),
+-    body:pick(['lean build','athletic build','slender build']),
+-    clothing:'plain source-neutral layered clothing without culture-specific motifs',
+-    accessories:[],
++    face: pick([
++      'distinct angular face',
++      'distinct oval face',
++      'distinct square face',
++    ]),
++    hair: pick([
++      'straight dark hair',
++      'wavy dark-brown hair',
++      'short charcoal-black hair',
++    ]),
++    eyes: pick(['dark amber eyes', 'grey-blue eyes', 'deep brown eyes']),
++    skin: pick([
++      'neutral light-brown skin',
++      'neutral medium skin',
++      'neutral fair skin',
++    ]),
++    body: pick(['lean build', 'athletic build', 'slender build']),
++    clothing:
++      'plain source-neutral layered clothing without culture-specific motifs',
++    accessories: [],
+   };
+ }
+ 
+-function materializeProvisional(current:CharacterVisual):CharacterVisual {
+-  const fallback=provisionalAppearance(current.characterId);
+-  const canonicalAppearance={...current.canonicalAppearance};
+-  for(const key of ['face','hair','eyes','skin','body','clothing'] as const) {
++function materializeProvisional(current: CharacterVisual): CharacterVisual {
++  const fallback = provisionalAppearance(current.characterId);
++  const canonicalAppearance = { ...current.canonicalAppearance };
++  for (const key of [
++    'face',
++    'hair',
++    'eyes',
++    'skin',
++    'body',
++    'clothing',
++  ] as const) {
+     canonicalAppearance[key] ??= fallback[key];
+   }
+   return {
+     ...current,
+     canonicalAppearance,
+-    lockedAttributes:[...new Set([...current.lockedAttributes,'face','hair','eyes','skin','body','clothing'])],
++    lockedAttributes: [
++      ...new Set([
++        ...current.lockedAttributes,
++        'face',
++        'hair',
++        'eyes',
++        'skin',
++        'body',
++        'clothing',
++      ]),
++    ],
+   };
+ }
+ 
+-export async function loadCharacterState(projectRoot: string): Promise<CharacterState> {
+-  const file = path.join(projectRoot, '.story-thumbnail', 'state', 'characters.json');
+-  try { return characterStateSchema.parse(JSON.parse(await fs.readFile(file, 'utf8'))); }
+-  catch (error) { if ((error as NodeJS.ErrnoException).code === 'ENOENT') return { version: 1, characters: {} }; throw error; }
++export async function loadCharacterState(
++  projectRoot: string,
++): Promise<CharacterState> {
++  const file = path.join(
++    projectRoot,
++    '.story-thumbnail',
++    'state',
++    'characters.json',
++  );
++  try {
++    return characterStateSchema.parse(
++      JSON.parse(await fs.readFile(file, 'utf8')),
++    );
++  } catch (error) {
++    if ((error as NodeJS.ErrnoException).code === 'ENOENT') {
++      return { version: 1, characters: {} };
++    }
++    throw error;
++  }
+ }
+-export function mergeCharacterState(state: CharacterState, resolved: CharacterVisual[]): CharacterState {
++
++/** Thuộc tính KHÔNG được phép override sau khi đã lock (Character Bible). */
++const HARD_LOCKED_ATTRS = new Set(['face', 'hair', 'eyes', 'skin', 'body']);
++
++export function mergeCharacterState(
++  state: CharacterState,
++  resolved: CharacterVisual[],
++): CharacterState {
+   const next = structuredClone(state);
+   for (const current of resolved) {
+     const previous = next.characters[current.characterId];
+-    if (!previous) { next.characters[current.characterId] = { ...materializeProvisional(current), revisions: [] }; continue; }
++    if (!previous) {
++      next.characters[current.characterId] = {
++        ...materializeProvisional(current),
++        revisions: [],
++      };
++      continue;
++    }
++
+     const appearance = { ...current.canonicalAppearance };
+-    for (const key of ['face','hair','eyes','skin','body','clothing'] as const) if (appearance[key] === null && previous.canonicalAppearance[key] !== null) appearance[key] = previous.canonicalAppearance[key];
++    const locked = new Set(previous.lockedAttributes ?? []);
++
++    // Ưu tiên tuyệt đối giá trị đã lock (Bible / previous)
++    for (const key of [
++      'face',
++      'hair',
++      'eyes',
++      'skin',
++      'body',
++      'clothing',
++    ] as const) {
++      if (
++        appearance[key] === null &&
++        previous.canonicalAppearance[key] !== null
++      ) {
++        appearance[key] = previous.canonicalAppearance[key];
++      }
++      // Hard-locked: không cho chapter mới ghi đè
++      if (
++        HARD_LOCKED_ATTRS.has(key) &&
++        locked.has(key) &&
++        previous.canonicalAppearance[key]
++      ) {
++        appearance[key] = previous.canonicalAppearance[key];
++      }
++    }
++
+     const revisions = [...previous.revisions];
+-    for (const key of ['hair','eyes','clothing'] as const) if (current.canonicalAppearance[key] && previous.canonicalAppearance[key] && current.canonicalAppearance[key] !== previous.canonicalAppearance[key]) revisions.push({ attribute: key, oldValue: previous.canonicalAppearance[key]!, newValue: current.canonicalAppearance[key]!, reason: 'new explicit canon overrides stored provisional/canon', source: current.evidence[0]?.sourcePath ?? 'canon', createdAt: new Date().toISOString() });
+-    next.characters[current.characterId] = { ...previous, ...current, identity: { realAge: current.identity.realAge ?? previous.identity.realAge, visibleAge: current.identity.visibleAge ?? previous.identity.visibleAge, gender: current.identity.gender ?? previous.identity.gender }, canonicalAppearance: appearance, provisionalAttributes: [...new Set([...previous.provisionalAttributes, ...current.provisionalAttributes])], revisions };
++    // Chỉ ghi revision cho thuộc tính mutable hoặc khi chưa lock
++    for (const key of ['hair', 'eyes', 'clothing'] as const) {
++      if (
++        current.canonicalAppearance[key] &&
++        previous.canonicalAppearance[key] &&
++        current.canonicalAppearance[key] !==
++          previous.canonicalAppearance[key]
++      ) {
++        if (HARD_LOCKED_ATTRS.has(key) && locked.has(key)) {
++          // Bỏ qua override – giữ giá trị cũ
++          continue;
++        }
++        revisions.push({
++          attribute: key,
++          oldValue: previous.canonicalAppearance[key]!,
++          newValue: current.canonicalAppearance[key]!,
++          reason:
++            'new explicit canon overrides stored provisional/canon',
++          source: current.evidence[0]?.sourcePath ?? 'canon',
++          createdAt: new Date().toISOString(),
++        });
++      }
++    }
++
++    next.characters[current.characterId] = {
++      ...previous,
++      ...current,
++      identity: {
++        realAge:
++          current.identity.realAge ?? previous.identity.realAge,
++        visibleAge:
++          current.identity.visibleAge ?? previous.identity.visibleAge,
++        gender: current.identity.gender ?? previous.identity.gender,
++      },
++      canonicalAppearance: appearance,
++      lockedAttributes: [
++        ...new Set([
++          ...previous.lockedAttributes,
++          ...current.lockedAttributes,
++          ...HARD_LOCKED_ATTRS,
++        ]),
++      ],
++      provisionalAttributes: [
++        ...new Set([
++          ...previous.provisionalAttributes,
++          ...current.provisionalAttributes,
++        ]),
++      ].filter((p) => !HARD_LOCKED_ATTRS.has(p.split(':')[0] ?? '')),
++      revisions,
++    };
+   }
+   return next;
+ }
+-export async function saveCharacterState(projectRoot: string, state: CharacterState): Promise<void> {
+-  const file = path.join(projectRoot, '.story-thumbnail', 'state', 'characters.json'); await fs.mkdir(path.dirname(file), { recursive: true }); await fs.writeFile(file, `${JSON.stringify(state, null, 2)}\n`, 'utf8');
++
++export async function saveCharacterState(
++  projectRoot: string,
++  state: CharacterState,
++): Promise<void> {
++  const file = path.join(
++    projectRoot,
++    '.story-thumbnail',
++    'state',
++    'characters.json',
++  );
++  await fs.mkdir(path.dirname(file), { recursive: true });
++  await fs.writeFile(file, `${JSON.stringify(state, null, 2)}\n`, 'utf8');
+ }
+diff --git a/poster-generator/src/pipeline.ts b/poster-generator/src/pipeline.ts
+index 4125a93..917166e 100644
+--- a/poster-generator/src/pipeline.ts
++++ b/poster-generator/src/pipeline.ts
+@@ -113,8 +113,23 @@ export async function runPipeline(options: PipelineOptions, env: Environment, co
+     .map((match)=>match[1]!.replace(/\s*\([^)]*\)\s*$/, '').trim())
+     .filter((name)=>name!==name.toLocaleUpperCase('vi')&&chapterLower.includes(name.toLocaleLowerCase('vi')));
+   analysis.charactersPresent=[...new Set([...contextCharacterNames,...analysis.charactersPresent])];
+-  const resolved = resolveContinuity(canon, position, analysis); const references = await loadReferences(projectRoot, options.references); const detectedCharacters = resolveCharacterVisuals(analysis, chapter, canon, references); const state = mergeCharacterState(await loadCharacterState(projectRoot), detectedCharacters); await saveCharacterState(projectRoot, state);
+-  const characters = detectedCharacters.map((character) => state.characters[character.characterId] ?? character);
++  const resolved = resolveContinuity(canon, position, analysis);
++  const references = await loadReferences(projectRoot, options.references);
++  const detectedCharacters = resolveCharacterVisuals(analysis, chapter, canon, references);
++  // P0: Character Bible – khóa face/hair/eyes/skin/body, chỉ cho phép clothing/injuries thay đổi
++  const { enforceBibles } = await import('./characters/character-bible.js');
++  const previousState = await loadCharacterState(projectRoot);
++  const { state: bibleState, visuals: enforcedVisuals } = await enforceBibles(
++    projectRoot,
++    previousState,
++    detectedCharacters,
++    chapter.path,
++  );
++  const state = mergeCharacterState(bibleState, enforcedVisuals);
++  await saveCharacterState(projectRoot, state);
++  const characters = enforcedVisuals.map(
++    (character) => state.characters[character.characterId] ?? character,
++  );
+   const candidates = rankScenes(analysis.scenes,options.sceneWeights); const concepts = buildConcepts(candidates); const selected = selectConcept(concepts, options.concept); const brief = buildBrief(analysis, selected, candidates, characters); assertBriefSpoilerSafe(brief, chapter.text);
+   const requestedStoryboardCount = options.storyboardCount && options.storyboardCount > 0 ? options.storyboardCount : autoStoryboardCount(candidates, options.quality);
+   options.onProgress?.(`[storyboard] AI chon ${requestedStoryboardCount} canh uu tien tu ${candidates.length} canh co bang chung.`);
+-- 
+2.43.0
+

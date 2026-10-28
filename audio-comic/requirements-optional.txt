@@ -1,0 +1,5 @@
+# Optional text-normalization backends for Vietnamese TTS.
+# The built-in regex normalizer works without these packages.
+# Cài nếu muốn dùng backend="vietnormalizer" hoặc backend="vinorm".
+vietnormalizer
+vinorm

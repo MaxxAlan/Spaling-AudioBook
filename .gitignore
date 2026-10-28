@@ -40,6 +40,9 @@ testing/
 tools/ci_smoke.py
 examples/
 **/examples/
+# Unit tests for text normalization / pronunciation are part of the pipeline.
+!audio-comic/tests/
+!audio-comic/tests/**
 .audiobook-web/
 .install-manifest.json
 ComfyUI/
